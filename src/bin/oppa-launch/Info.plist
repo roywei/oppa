@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>ai.oppa.launch</string>
+	<key>CFBundleName</key>
+	<string>OPPA</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>OPPA uses Messages and other apps to answer you.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>OPPA reads your calendars to answer you.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>OPPA reads your contacts to answer you.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>OPPA reads your reminders to answer you.</string>
+</dict>
+</plist>

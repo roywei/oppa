@@ -1,0 +1,4 @@
+id = "codex"
+family = "openai"
+command = ["python3", "resources/adapters/codex.py"]
+timeout_seconds = 120

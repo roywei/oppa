@@ -1,0 +1,1350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>OPPA</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024'%3E%3Crect width='1024' height='1024' rx='236' fill='%23315EDA'/%3E%3Cg transform='scale(1.3333333333) translate(-50 -125)'%3E%3Cg fill='%23FFDCBF'%3E%3Cpath d='M152 444C126 421 96 444 79 478C62 510 62 551 79 579C88 593 104 600 121 601L160 478C175 456 168 445 152 444Z'/%3E%3Cpath d='M681 617C711 605 739 631 742 660C747 709 701 770 655 768C641 769 630 761 626 751L657 647C663 627 671 619 681 617Z'/%3E%3Cpath d='M135 449C155 386 211 324 280 302C374 273 510 310 600 381C669 435 693 526 691 616C691 704 629 782 550 817C452 860 344 830 259 800C173 765 114 700 114 605C115 548 118 488 135 449Z'/%3E%3C/g%3E%3Cg fill='%23EFB08A'%3E%3Cpath d='M138 493C130 469 109 479 101 504C91 532 97 554 118 563C123 537 133 514 138 493Z'/%3E%3Cpath d='M681 658C697 650 709 662 706 683C703 711 676 736 654 731C665 705 674 680 681 658Z'/%3E%3C/g%3E%3Cpath d='M135 438C131 351 169 278 247 255L243 245C260 201 340 171 411 171C494 170 567 193 611 224C650 251 672 277 682 310C685 291 680 267 674 253C716 284 737 338 710 389C749 401 768 440 766 483C763 527 734 577 700 616L680 630L684 609L687 581C685 540 681 502 670 469L686 476C653 418 571 360 470 326C377 291 310 294 250 325L278 331C241 361 211 399 187 426C181 445 168 458 154 469C157 452 149 441 135 438Z' fill='%23171B27'/%3E%3Cg fill='%23171B27'%3E%3Crect x='266' y='477' width='50' height='104' rx='25' transform='rotate(20 291 529)'/%3E%3Crect x='509' y='553' width='50' height='104' rx='25' transform='rotate(20 534 605)'/%3E%3Cpath d='M171 431C251 411 338 459 387 487C410 506 432 512 458 510C523 503 611 533 680 578L703 600L687 628L679 626L683 611C667 603 658 617 651 637C632 678 614 699 579 697C527 692 465 674 446 651C430 631 428 591 431 568C432 551 419 543 409 544C397 545 390 561 382 574C361 605 337 620 304 617C262 615 210 596 192 574C174 553 174 512 178 484C181 469 184 455 166 453Z M230 450C269 443 348 471 373 494C390 510 382 537 368 558C348 591 333 601 302 598C260 595 218 578 204 556C192 539 196 501 201 480C207 459 216 451 230 450Z M480 532C513 526 599 550 626 571C646 585 641 608 630 632C616 662 605 681 580 679C531 675 478 657 464 642C451 629 449 601 450 576C452 549 459 535 480 532Z' fill-rule='evenodd'/%3E%3C/g%3E%3Cg fill='%23E99D94'%3E%3Cellipse cx='200' cy='623' rx='39' ry='20' transform='rotate(20 200 623)'/%3E%3Cellipse cx='552' cy='732' rx='39' ry='20' transform='rotate(18 552 732)'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f7f9fe;
+  --surface: #ffffff;
+  --surface-2: #eff3fc;
+  --border: #dce3f0;
+  --text: #171b27;
+  --muted: #566079;
+  --faint: #5f6a83;
+  --accent: #315eda;
+  --accent-soft: #e9f0ff;
+  --accent-ink: #ffffff;
+  --owner-bubble: #315eda;
+  --owner-ink: #ffffff;
+  --ok: #24745a;
+  --ok-soft: #e2f2ea;
+  --warn: #865715;
+  --warn-soft: #f7ecd8;
+  --danger: #b54141;
+  --danger-soft: #f9e5e5;
+  --code: #eff3fc;
+  --wordmark: #315eda;
+  --shadow: 0 1px 2px rgba(24, 47, 101, 0.06);
+  --radius: 12px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111827;
+    --surface: #192235;
+    --surface-2: #202c42;
+    --border: #35425a;
+    --text: #f6f8ff;
+    --muted: #b5c1d8;
+    --faint: #8fa0ba;
+    --accent: #a9c0ff;
+    --accent-soft: #1f2f57;
+    --accent-ink: #111827;
+    --owner-bubble: #3654b0;
+    --owner-ink: #ffffff;
+    --ok: #8cdab8;
+    --ok-soft: #173a30;
+    --warn: #f2ce81;
+    --warn-soft: #3a3018;
+    --danger: #ffb1b1;
+    --danger-soft: #432228;
+    --code: #202c42;
+    --wordmark: #ffffff;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 var(--font); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--accent); }
+h1, h2, h3 { margin: 0; line-height: 1.25; }
+h1 { font-size: 22px; font-weight: 650; }
+h2 { font-size: 17px; font-weight: 620; }
+h3 { font-size: 15px; font-weight: 620; }
+code, pre { font-family: var(--mono); }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+.top { position: sticky; top: 0; z-index: 10; background: var(--bg); border-bottom: 1px solid var(--border); }
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 1180px; height: 52px; margin: 0 auto; padding: 0 20px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--wordmark); }
+.mark { width: 28px; height: 28px; }
+.wordmark { width: 50px; height: 17px; fill: currentColor; }
+.link { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.link.ok { background: var(--ok); }
+.link.down { background: var(--danger); }
+.modes { display: inline-flex; gap: 2px; padding: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
+.modes button { padding: 5px 12px; border: 0; border-radius: 7px; background: none; color: var(--muted); font-size: 13.5px; font-weight: 560; cursor: pointer; }
+.modes button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.tabs { display: flex; align-items: stretch; gap: 2px; max-width: 1180px; height: 42px; margin: 0 auto; padding: 0 12px; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { padding: 0 10px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font-size: 14px; font-weight: 560; white-space: nowrap; cursor: pointer; }
+.tabs button:hover { color: var(--text); }
+.tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text); }
+.signed-out .tabs, .signed-out .modes { display: none; }
+
+main { max-width: 1180px; margin: 0 auto; padding: 22px 20px 48px; }
+main.view-chat { padding-bottom: 16px; }
+.page-head { margin: 2px 0 18px; }
+.lede { max-width: 72ch; margin: 6px 0 0; color: var(--muted); }
+.card { margin-bottom: 16px; padding: 16px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.card-head .tools { display: flex; align-items: center; gap: 10px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 14px; font-weight: 560; line-height: 1.2; cursor: pointer; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: var(--surface); }
+.btn.small { padding: 4px 9px; font-size: 13px; }
+.btn.quiet { border-color: transparent; background: none; color: var(--muted); }
+.btn.quiet:hover { color: var(--text); background: var(--surface-2); }
+.btn:disabled { opacity: 0.5; filter: none; cursor: default; }
+input[type="text"], input[type="time"], input[type="date"], input[type="search"], select, textarea {
+  min-width: 0; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+textarea { line-height: 1.5; resize: vertical; }
+.field { display: grid; gap: 6px; align-content: start; color: var(--muted); font-size: 13px; font-weight: 560; }
+.field small { font-weight: 400; color: var(--faint); }
+.inline { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13.5px; cursor: pointer; }
+.placeholder { padding: 18px 4px; color: var(--muted); text-align: center; }
+.problem { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; background: var(--danger-soft); color: var(--danger); border-radius: 10px; overflow-wrap: anywhere; }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; background: var(--surface-2); color: var(--muted); border-radius: 999px; font-size: 12.5px; font-weight: 560; white-space: nowrap; }
+.badge .icon { width: 13px; height: 13px; }
+.badge.ok { background: var(--ok-soft); color: var(--ok); }
+.badge.warn { background: var(--warn-soft); color: var(--warn); }
+.badge.bad { background: var(--danger-soft); color: var(--danger); }
+.badge.accent { background: var(--accent-soft); color: var(--accent); }
+.muted { color: var(--muted); }
+.warn-text { color: var(--warn); }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+
+.chat { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; height: calc(100vh - 133px); height: calc(100dvh - 133px); min-height: 360px; }
+.threads { display: flex; flex-direction: column; min-height: 0; }
+.threads-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 2px 10px 6px; }
+.eyebrow { color: var(--muted); font-size: 12px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; }
+.thread-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.thread { display: flex; justify-content: space-between; gap: 8px; padding: 9px 10px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }
+.thread:hover { background: var(--surface-2); }
+.thread.active { background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+.thread-title { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.thread-time { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.thread.unread .thread-title { font-weight: 650; }
+.thread.unread .thread-title::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+.conversation { display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.conversation-head { padding: 12px 18px; border-bottom: 1px solid var(--border); }
+.conversation-id { margin-top: 2px; color: var(--faint); font: 12px var(--mono); overflow-wrap: anywhere; }
+.picker { display: none; gap: 8px; margin-bottom: 10px; }
+.picker select { flex: 1; }
+.messages { display: flex; flex: 1; flex-direction: column; gap: 10px; padding: 18px; overflow-y: auto; }
+.msg { max-width: min(680px, 86%); padding: 9px 14px; border-radius: 16px; overflow-wrap: anywhere; }
+.msg.in { align-self: flex-end; background: var(--owner-bubble); color: var(--owner-ink); border-bottom-right-radius: 5px; }
+.msg.out { align-self: flex-start; background: var(--surface-2); border-bottom-left-radius: 5px; }
+.msg.pending { opacity: 0.6; }
+.msg.failed { box-shadow: inset 0 0 0 1.5px var(--danger); }
+.plain { white-space: pre-wrap; }
+.meta { margin-top: 3px; color: var(--faint); font-size: 11.5px; }
+.msg.in .meta { color: inherit; opacity: 0.9; text-align: right; }
+.msg-problem { margin-top: 4px; color: var(--danger); font-size: 12.5px; }
+/* Danger has no contrast on the cobalt owner bubble: ring it from outside, keep its text white. */
+.msg.in.failed { box-shadow: 0 0 0 2px var(--danger); }
+.msg.in .msg-problem { color: inherit; font-weight: 600; }
+.md p { margin: 0 0 0.6em; }
+.md > :last-child { margin-bottom: 0; }
+.md ul, .md ol { margin: 0.2em 0 0.6em; padding-left: 1.3em; }
+.md pre { margin: 0.4em 0 0.7em; padding: 10px 12px; overflow-x: auto; background: var(--code); border-radius: 8px; font-size: 13px; line-height: 1.45; }
+.msg .md pre { background: var(--surface); }
+.md code { padding: 1px 5px; background: var(--code); border-radius: 5px; font-size: 0.9em; }
+.msg .md code { background: var(--surface); }
+.md pre code { padding: 0; background: none; }
+.md blockquote { margin: 0 0 0.6em; padding-left: 10px; border-left: 3px solid var(--border); color: var(--muted); }
+.md h3, .md h4, .md h5, .md h6 { margin: 0.9em 0 0.4em; font-size: 1em; }
+.md hr { border: 0; border-top: 1px solid var(--border); }
+.typing { display: flex; align-self: flex-start; gap: 5px; padding: 13px 16px; background: var(--surface-2); border-radius: 16px; border-bottom-left-radius: 5px; }
+.typing span { width: 7px; height: 7px; background: var(--muted); border-radius: 50%; opacity: 0.35; animation: pulse 1.2s infinite ease-in-out; }
+.typing span:nth-child(2) { animation-delay: 0.2s; }
+.typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes pulse { 0%, 80%, 100% { opacity: 0.3; transform: translateY(0); } 40% { opacity: 0.9; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .typing span { animation: none; opacity: 0.6; } }
+.event-card { align-self: center; width: min(560px, 94%); padding: 8px 12px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); font-size: 13.5px; }
+.event-label { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 620; }
+.event-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.composer { padding: 10px 12px; border-top: 1px solid var(--border); }
+.composer-row { display: flex; align-items: flex-end; gap: 8px; }
+.composer textarea { flex: 1; max-height: 200px; padding: 9px 12px; border-radius: 12px; resize: none; }
+.composer-problem { padding: 0 2px 6px; color: var(--danger); font-size: 13px; }
+.composer-problem:empty { display: none; }
+.send { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+
+.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table th { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12.5px; font-weight: 600; text-align: left; white-space: nowrap; }
+.table td { padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.table tr:last-child td { border-bottom: 0; }
+.table tr.cancelled td { color: var(--faint); }
+.table .num { font-variant-numeric: tabular-nums; text-align: right; }
+.clamp { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.wrap { overflow-wrap: anywhere; }
+
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.days { display: flex; flex-wrap: wrap; gap: 6px; }
+.day { position: relative; display: inline-flex; }
+.day input { position: absolute; opacity: 0; pointer-events: none; }
+.day span { padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer; }
+.day input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.day input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.day input:disabled + span { opacity: 0.45; cursor: default; }
+.form-problem { margin: 0 0 10px; color: var(--danger); font-size: 13.5px; }
+.form-problem:empty { display: none; }
+.form-actions { display: flex; justify-content: flex-end; }
+
+.levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.level { display: grid; align-content: start; gap: 6px; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; text-align: left; cursor: pointer; }
+.level:hover { background: var(--surface-2); }
+.level[aria-checked="true"] { background: var(--accent-soft); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); cursor: default; }
+.level-name { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 650; }
+.level p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 18px; margin: 0; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+
+.editor { width: 100%; min-height: 380px; padding: 12px 14px; font: 14px/1.6 var(--mono); }
+.notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 10px 12px; background: var(--warn-soft); border-radius: 10px; }
+.notice p { margin: 0; }
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.missing { padding: 30px 8px; color: var(--muted); text-align: center; }
+.missing p { margin: 0 0 4px; }
+.missing .actions { justify-content: center; }
+.note-status { color: var(--muted); font-size: 13px; }
+.path { color: var(--muted); font: 13px var(--mono); overflow-wrap: anywhere; }
+.people { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+.people-list { display: grid; gap: 2px; }
+.person { display: grid; gap: 2px; width: 100%; padding: 10px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }
+.person:hover { background: var(--surface-2); }
+.person.active { background: var(--accent-soft); }
+.person-name { font-weight: 600; overflow-wrap: anywhere; }
+.person-excerpt { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 13px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.add-person { display: flex; gap: 8px; margin-bottom: 10px; }
+.add-person input { flex: 1; }
+.editor-title { margin: 0 0 10px; }
+
+details summary { color: var(--muted); font-size: 13px; cursor: pointer; }
+details p { margin: 6px 0 0; color: var(--muted); font-size: 13.5px; }
+pre.output { margin: 0 0 12px; padding: 12px 14px; overflow-x: auto; background: var(--code); border-radius: 10px; font-size: 12.5px; line-height: 1.5; white-space: pre; }
+.checks { display: grid; gap: 10px; margin: 0 0 12px; padding: 0; list-style: none; }
+.checks li { display: flex; align-items: flex-start; gap: 10px; }
+.checks .icon { margin-top: 2px; }
+.checks .yes { color: var(--ok); }
+.checks .no { color: var(--danger); }
+.check-detail { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+
+.toast { position: fixed; bottom: 22px; left: 50%; z-index: 60; max-width: min(560px, calc(100vw - 32px)); padding: 10px 16px; transform: translateX(-50%); background: var(--text); color: var(--bg); border-radius: 10px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); font-size: 14px; }
+.toast.bad { background: var(--danger); color: var(--surface); }
+.overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(17, 24, 39, 0.42); }
+.dialog { width: min(460px, 100%); padding: 20px 22px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25); }
+.dialog h2 { margin-bottom: 10px; }
+.dialog p { margin: 0 0 10px; color: var(--muted); }
+.dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.signin { max-width: 560px; margin: 8vh auto; }
+.signin p { color: var(--muted); }
+
+@media (max-width: 760px) {
+  .bar { padding: 0 14px; }
+  main { padding: 16px 12px 40px; }
+  main.view-chat { padding-bottom: 12px; }
+  .chat { grid-template-columns: minmax(0, 1fr); height: calc(100vh - 123px); height: calc(100dvh - 123px); }
+  .threads { display: none; }
+  .picker { display: flex; }
+  .conversation-head { padding: 10px 12px; }
+  .messages { padding: 14px 12px; }
+  .msg { max-width: 92%; }
+  .levels, .people { grid-template-columns: minmax(0, 1fr); }
+  .table.stack thead { display: none; }
+  .table.stack tr { display: block; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .table.stack tr:last-child { border-bottom: 0; }
+  .table.stack td { position: relative; display: block; min-height: 1.6em; padding: 3px 0 3px 104px; border: 0; }
+  .table.stack td::before { content: attr(data-label); position: absolute; top: 4px; left: 0; width: 96px; color: var(--muted); font-size: 12.5px; }
+  .table.stack td.bare { padding: 6px 0 0; }
+  .table.stack td.bare::before { content: none; }
+  .table.stack .num { text-align: left; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="bar">
+    <div class="brand"><svg class="mark" viewBox="0 0 1024 1024" aria-hidden="true"><rect width="1024" height="1024" rx="236" fill="#315EDA"/><g transform="scale(1.3333333333) translate(-50 -125)"><g fill="#FFDCBF"><path d="M152 444C126 421 96 444 79 478C62 510 62 551 79 579C88 593 104 600 121 601L160 478C175 456 168 445 152 444Z"/><path d="M681 617C711 605 739 631 742 660C747 709 701 770 655 768C641 769 630 761 626 751L657 647C663 627 671 619 681 617Z"/><path d="M135 449C155 386 211 324 280 302C374 273 510 310 600 381C669 435 693 526 691 616C691 704 629 782 550 817C452 860 344 830 259 800C173 765 114 700 114 605C115 548 118 488 135 449Z"/></g><g fill="#EFB08A"><path d="M138 493C130 469 109 479 101 504C91 532 97 554 118 563C123 537 133 514 138 493Z"/><path d="M681 658C697 650 709 662 706 683C703 711 676 736 654 731C665 705 674 680 681 658Z"/></g><path d="M135 438C131 351 169 278 247 255L243 245C260 201 340 171 411 171C494 170 567 193 611 224C650 251 672 277 682 310C685 291 680 267 674 253C716 284 737 338 710 389C749 401 768 440 766 483C763 527 734 577 700 616L680 630L684 609L687 581C685 540 681 502 670 469L686 476C653 418 571 360 470 326C377 291 310 294 250 325L278 331C241 361 211 399 187 426C181 445 168 458 154 469C157 452 149 441 135 438Z" fill="#171B27"/><g fill="#171B27"><rect x="266" y="477" width="50" height="104" rx="25" transform="rotate(20 291 529)"/><rect x="509" y="553" width="50" height="104" rx="25" transform="rotate(20 534 605)"/><path d="M171 431C251 411 338 459 387 487C410 506 432 512 458 510C523 503 611 533 680 578L703 600L687 628L679 626L683 611C667 603 658 617 651 637C632 678 614 699 579 697C527 692 465 674 446 651C430 631 428 591 431 568C432 551 419 543 409 544C397 545 390 561 382 574C361 605 337 620 304 617C262 615 210 596 192 574C174 553 174 512 178 484C181 469 184 455 166 453Z M230 450C269 443 348 471 373 494C390 510 382 537 368 558C348 591 333 601 302 598C260 595 218 578 204 556C192 539 196 501 201 480C207 459 216 451 230 450Z M480 532C513 526 599 550 626 571C646 585 641 608 630 632C616 662 605 681 580 679C531 675 478 657 464 642C451 629 449 601 450 576C452 549 459 535 480 532Z" fill-rule="evenodd"/></g><g fill="#E99D94"><ellipse cx="200" cy="623" rx="39" ry="20" transform="rotate(20 200 623)"/><ellipse cx="552" cy="732" rx="39" ry="20" transform="rotate(18 552 732)"/></g></g></svg><svg class="wordmark" viewBox="0 0 444 150" role="img" aria-label="OPPA"><circle cx="55.5" cy="55.5" r="39.5" fill="none" stroke="currentColor" stroke-width="32"/><circle cx="166.5" cy="55.5" r="39.5" fill="none" stroke="currentColor" stroke-width="32"/><path d="M111.0 55h32v91h-32z"/><circle cx="277.5" cy="55.5" r="39.5" fill="none" stroke="currentColor" stroke-width="32"/><path d="M222.0 55h32v91h-32z"/><circle cx="388.5" cy="55.5" r="39.5" fill="none" stroke="currentColor" stroke-width="32"/><path d="M412.0 55h32v56h-32z"/></svg><span class="link" id="link" role="status" aria-label="Connection"></span></div>
+    <div class="modes" role="group" aria-label="Mode">
+      <button type="button" data-mode="user" aria-pressed="true">User</button>
+      <button type="button" data-mode="developer" aria-pressed="false">Developer</button>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Sections"></nav>
+</header>
+<main id="view"></main>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script>
+'use strict';
+
+// Helpers -----------------------------------------------------------------------
+
+const $ = (selector, root) => (root || document).querySelector(selector);
+
+function h(tag, props, ...children) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(props || {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key === 'class') el.className = value;
+    else if (key === 'text') el.textContent = value;
+    else if (key === 'html') el.innerHTML = value; // only ever markdown(), which escapes first
+    else if (key.startsWith('on')) el.addEventListener(key.slice(2), value);
+    else el.setAttribute(key, value === true ? '' : value);
+  }
+  for (const child of children.flat(Infinity)) {
+    if (child === null || child === undefined || child === false) continue;
+    el.append(child instanceof Node ? child : String(child));
+  }
+  return el;
+}
+
+const ICONS = {
+  send: 'M5 12h13M12 5l7 7-7 7',
+  plus: 'M12 5v14M5 12h14',
+  refresh: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
+  cross: 'M7 7l10 10M17 7L7 17',
+  alert: 'M12 8v5M12 16.5v.01M10.3 3.9L2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
+  branch: 'M6 4v11M18 9a2.5 2.5 0 1 0 0-5a2.5 2.5 0 0 0 0 5zM6 20a2.5 2.5 0 1 0 0-5a2.5 2.5 0 0 0 0 5zM18 9c0 4-3.5 5.5-11 6.5',
+};
+
+function icon(name, extra) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'icon' + (extra ? ' ' + extra : ''));
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', ICONS[name]);
+  svg.append(path);
+  return svg;
+}
+
+const saved = {
+  get(key, fallback) {
+    try { const value = localStorage.getItem('oppa.' + key); return value === null ? fallback : value; } catch (_) { return fallback; }
+  },
+  set(key, value) { try { localStorage.setItem('oppa.' + key, value); } catch (_) { /* private mode */ } },
+};
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+class Failure extends Error {
+  constructor(message, status, data) { super(message); this.status = status; this.data = data || {}; }
+}
+
+async function api(path, options) {
+  options = options || {};
+  const init = {method: options.method || 'GET', credentials: 'same-origin', cache: 'no-store', headers: {}};
+  if (options.body !== undefined) {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(options.body);
+  }
+  let response;
+  try {
+    response = await fetch(path, init);
+  } catch (_) {
+    throw new Failure('The page cannot reach the web channel. Is oppa serve running?', 0);
+  }
+  let data = null;
+  try { data = await response.json(); } catch (_) { data = null; }
+  if (response.status === 401) {
+    signedOut();
+    throw new Failure('Sign in first.', 401);
+  }
+  if (!response.ok) throw new Failure((data && data.error) || 'The request failed (' + response.status + ').', response.status, data);
+  return data;
+}
+
+let toastTimer = 0;
+function toast(message, kind) {
+  const el = $('#toast');
+  el.textContent = message;
+  el.className = 'toast' + (kind ? ' ' + kind : '');
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, kind === 'bad' ? 7000 : 3500);
+}
+
+// An in-page confirmation; window.confirm would block the page and look foreign.
+function ask(options) {
+  return new Promise(resolve => {
+    const previous = document.activeElement;
+    const yes = h('button', {class: 'btn ' + (options.danger ? 'danger' : 'primary'), type: 'button'}, options.confirm || 'Confirm');
+    const no = h('button', {class: 'btn', type: 'button'}, options.cancel || 'Cancel');
+    const body = (Array.isArray(options.body) ? options.body : [options.body]).map(text => h('p', {text}));
+    const dialog = h('div', {class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dialog-title'},
+      h('h2', {id: 'dialog-title', text: options.title}), body, h('div', {class: 'dialog-actions'}, no, yes));
+    const overlay = h('div', {class: 'overlay'}, dialog);
+    const close = value => {
+      overlay.remove();
+      document.removeEventListener('keydown', keys, true);
+      if (previous && previous.focus) previous.focus();
+      resolve(value);
+    };
+    const keys = event => {
+      if (event.key === 'Escape') { event.preventDefault(); close(false); }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        (document.activeElement === yes ? no : yes).focus();
+      }
+    };
+    yes.addEventListener('click', () => close(true));
+    no.addEventListener('click', () => close(false));
+    overlay.addEventListener('click', event => { if (event.target === overlay) close(false); });
+    document.body.append(overlay);
+    document.addEventListener('keydown', keys, true);
+    (options.danger ? no : yes).focus();
+  });
+}
+
+function when(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (isNaN(date)) return String(iso);
+  const now = new Date();
+  const time = date.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+  if (date.toDateString() === now.toDateString()) return time;
+  if (Math.abs(date - now) < 6 * 86400000) return date.toLocaleDateString([], {weekday: 'short'}) + ' ' + time;
+  const options = {day: 'numeric', month: 'short'};
+  if (date.getFullYear() !== now.getFullYear()) options.year = 'numeric';
+  return date.toLocaleDateString([], options) + ' ' + time;
+}
+
+const pageHead = (title, lede) => h('div', {class: 'page-head'}, h('h1', {text: title}), lede ? h('p', {class: 'lede', text: lede}) : null);
+const placeholder = text => h('div', {class: 'placeholder', text});
+const problem = message => h('div', {class: 'problem', role: 'alert'}, icon('alert'), h('span', {text: message}));
+const refresh = action => h('button', {class: 'btn quiet small', type: 'button', title: 'Refresh', 'aria-label': 'Refresh', onclick: action}, icon('refresh'));
+
+function grow(area) {
+  area.style.height = 'auto';
+  area.style.height = Math.min(area.scrollHeight + 2, 200) + 'px';
+}
+
+// Markdown: HTML is escaped first, then a small set of forms is recognized, so
+// nothing the assistant writes can become markup of its own.
+
+const ESCAPES = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
+const escapeHtml = text => String(text).replace(/[&<>"']/g, c => ESCAPES[c]);
+const LINK_ATTRIBUTES = '" target="_blank" rel="noopener noreferrer">';
+
+function inlineMarkdown(escaped) {
+  const kept = [];
+  const keep = html => '\u0001' + (kept.push(html) - 1) + '\u0002';
+  let text = escaped.replace(/`([^`\n]+)`/g, (_, code) => keep('<code>' + code + '</code>'));
+  text = text.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (whole, label, url) =>
+    /^(https?:|mailto:)/i.test(url) ? keep('<a href="' + url + LINK_ATTRIBUTES + label + '</a>') : whole);
+  text = text.replace(/(^|[\s(])(https?:\/\/(?:[^\s<&]|&amp;)+)/g, (_, before, url) => {
+    const tail = (url.match(/[.,;:!?)\]]+$/) || [''])[0];
+    url = url.slice(0, url.length - tail.length);
+    return before + keep('<a href="' + url + LINK_ATTRIBUTES + url + '</a>') + tail;
+  });
+  text = text.replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/__(?=\S)([^\n]*?\S)__/g, '<strong>$1</strong>');
+  text = text.replace(/(^|[^*\w])\*(?=\S)([^*\n]*?\S)\*(?![*\w])/g, '$1<em>$2</em>');
+  text = text.replace(/(^|[^_\w])_(?=\S)([^_\n]*?\S)_(?![_\w])/g, '$1<em>$2</em>');
+  return text.replace(/\u0001(\d+)\u0002/g, (_, index) => kept[Number(index)]);
+}
+
+const LIST_ITEM = /^\s*([-*+]|\d+[.)])\s+/;
+
+// A chat message keeps its line breaks; a document's hard-wrapped lines join.
+function markdown(source, documentWraps) {
+  const lines = String(source).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').split('\n');
+  const out = [];
+  const inline = text => inlineMarkdown(escapeHtml(text)).replace(/\n/g, documentWraps ? ' ' : '<br>');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      const code = [];
+      i++;
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) code.push(lines[i++]);
+      i++;
+      out.push('<pre><code>' + escapeHtml(code.join('\n')) + '</code></pre>');
+    } else if (!line.trim()) {
+      i++;
+    } else if (/^#{1,6}\s/.test(line)) {
+      const level = Math.min(6, line.match(/^#+/)[0].length + 2);
+      out.push('<h' + level + '>' + inline(line.replace(/^#+\s+/, '')) + '</h' + level + '>');
+      i++;
+    } else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+      out.push('<hr>');
+      i++;
+    } else if (LIST_ITEM.test(line)) {
+      const ordered = /^\s*\d/.test(line);
+      const items = [];
+      while (i < lines.length && LIST_ITEM.test(lines[i])) {
+        let text = lines[i++].replace(LIST_ITEM, '');
+        while (i < lines.length && /^\s{2,}\S/.test(lines[i]) && !LIST_ITEM.test(lines[i])) text += '\n' + lines[i++].trim();
+        items.push('<li>' + inline(text) + '</li>');
+      }
+      out.push((ordered ? '<ol>' : '<ul>') + items.join('') + (ordered ? '</ol>' : '</ul>'));
+    } else if (/^\s*>/.test(line)) {
+      const quote = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) quote.push(lines[i++].replace(/^\s*>\s?/, ''));
+      out.push('<blockquote>' + inline(quote.join('\n')) + '</blockquote>');
+    } else {
+      const paragraph = [];
+      while (i < lines.length && lines[i].trim() && !/^\s*```/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i])
+             && !LIST_ITEM.test(lines[i]) && !/^\s*>/.test(lines[i])) paragraph.push(lines[i++]);
+      out.push('<p>' + inline(paragraph.join('\n')) + '</p>');
+    }
+  }
+  return out.join('');
+}
+
+// Shell -------------------------------------------------------------------------
+
+const TABS = {
+  user: [['chat', 'Chat'], ['schedules', 'Schedules'], ['access', 'Access'], ['personality', 'Personality'], ['rules', 'Rules'], ['people', 'People']],
+  developer: [['health', 'Health']],
+};
+const app = {session: null, mode: 'user', tab: {}, dirty: null};
+
+function setLink(ok) {
+  const link = $('#link');
+  link.className = 'link ' + (ok ? 'ok' : 'down');
+  link.title = ok ? 'Connected to the web channel' : 'Cannot reach the web channel';
+  link.setAttribute('aria-label', link.title);
+}
+
+function renderTabs() {
+  for (const button of document.querySelectorAll('.modes button')) button.setAttribute('aria-pressed', String(button.dataset.mode === app.mode));
+  $('#tabs').replaceChildren(...TABS[app.mode].map(([id, label]) => h('button', {
+    type: 'button', role: 'tab', 'aria-selected': String(app.tab[app.mode] === id), onclick: () => openTab(app.mode, id),
+  }, label)));
+}
+
+async function openTab(mode, tab) {
+  if (app.dirty && !(await ask({title: 'Leave without saving?', body: 'Your changes to ' + app.dirty + ' are not saved yet.', confirm: 'Leave', cancel: 'Stay'}))) return;
+  app.dirty = null;
+  app.mode = mode;
+  app.tab[mode] = tab;
+  saved.set('mode', mode);
+  saved.set('tab.' + mode, tab);
+  renderTabs();
+  const view = $('#view');
+  view.replaceChildren();
+  view.className = 'view-' + tab;
+  chat.box = null;
+  VIEWS[tab](view);
+}
+
+function signedOut() {
+  document.body.classList.add('signed-out');
+  setLink(false);
+  $('#view').replaceChildren(h('div', {class: 'card signin'},
+    h('h1', {text: 'Sign in'}),
+    h('p', {text: 'This page belongs to the owner of this OPPA instance. Open the sign-in link that the web channel wrote on this Mac, in the file login-url inside its state folder (the --state directory in the web channel’s command):'}),
+    h('pre', {class: 'output', text: 'cat <runtime>/channels/web/login-url'}),
+    h('p', {text: 'The link sets a cookie for this browser and brings you back here.'})));
+}
+
+// Chat --------------------------------------------------------------------------
+
+const chat = {
+  box: null, threads: [], drafts: [], thread: saved.get('thread', 'main'), unread: new Set(), waitingSince: {},
+  epoch: '', cursor: 0, ids: new Set(), unreceipted: [], outgoing: [], loading: false, queue: [], generation: 0,
+};
+
+const threadTitle = thread => (thread.id === 'main' ? 'Main' : thread.title || 'New chat');
+
+function allThreads() {
+  const known = new Set(chat.threads.map(thread => thread.id));
+  return chat.threads.concat(chat.drafts.filter(thread => !known.has(thread.id)));
+}
+
+function viewChat(view) {
+  const newChat = () => h('button', {class: 'btn quiet small', type: 'button', onclick: newThread}, icon('plus'), h('span', {text: 'New chat'}));
+  chat.list = h('div', {class: 'thread-list'});
+  chat.select = h('select', {'aria-label': 'Chat', onchange: event => openThread(event.target.value)});
+  chat.title = h('h2', {});
+  chat.subtitle = h('div', {class: 'conversation-id'});
+  chat.box = h('div', {class: 'messages', 'aria-live': 'polite', 'aria-label': 'Messages'});
+  chat.input = h('textarea', {rows: '1', placeholder: 'Message the assistant', 'aria-label': 'Message'});
+  chat.problem = h('div', {class: 'composer-problem', role: 'alert'});
+  chat.input.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+      event.preventDefault();
+      sendMessage();
+    }
+  });
+  chat.input.addEventListener('input', () => grow(chat.input));
+  view.append(h('div', {class: 'chat'},
+    h('aside', {class: 'threads'}, h('div', {class: 'threads-head'}, h('span', {class: 'eyebrow', text: 'Chats'}), newChat()), chat.list),
+    h('section', {class: 'conversation'},
+      h('div', {class: 'conversation-head'}, h('div', {class: 'picker'}, chat.select, newChat()), chat.title, chat.subtitle),
+      chat.box,
+      h('div', {class: 'composer'}, chat.problem, h('div', {class: 'composer-row'}, chat.input,
+        h('button', {class: 'send', type: 'button', title: 'Send (Enter)', 'aria-label': 'Send', onclick: sendMessage}, icon('send')))))));
+  renderThreads();
+  loadThreads().then(() => openThread(chat.thread));
+}
+
+function renderThreads() {
+  if (!chat.box) return;
+  const threads = allThreads();
+  chat.list.replaceChildren(...threads.map(thread => h('button', {
+    type: 'button',
+    class: 'thread' + (thread.id === chat.thread ? ' active' : '') + (chat.unread.has(thread.id) ? ' unread' : ''),
+    'aria-current': thread.id === chat.thread ? 'true' : null,
+    onclick: () => openThread(thread.id),
+  }, h('span', {class: 'thread-title', text: threadTitle(thread)}), h('span', {class: 'thread-time', text: when(thread.last_event_at || thread.created_at)}))));
+  chat.select.replaceChildren(...threads.map(thread => h('option', {value: thread.id, selected: thread.id === chat.thread},
+    threadTitle(thread) + (chat.unread.has(thread.id) ? ' (new)' : ''))));
+  // A new chat takes its title from its first message once the log has it.
+  const current = threads.find(thread => thread.id === chat.thread);
+  if (current) chat.title.textContent = threadTitle(current);
+  if (current && current.conversation) chat.subtitle.textContent = current.conversation;
+}
+
+async function loadThreads() {
+  try {
+    const data = await api('/api/threads');
+    chat.threads = data.threads;
+    if (data.error) toast(data.error, 'bad');
+  } catch (error) {
+    if (error.status !== 401) toast(error.message, 'bad');
+  }
+  renderThreads();
+}
+
+function touchThread(id, at) {
+  const thread = allThreads().find(item => item.id === id);
+  if (!thread) { loadThreads(); return; }
+  thread.last_event_at = at;
+  chat.threads.sort((a, b) => (a.id === 'main' ? -1 : b.id === 'main' ? 1 : String(b.last_event_at || '').localeCompare(String(a.last_event_at || ''))));
+}
+
+async function openThread(id) {
+  if (!chat.box) return;
+  if (!allThreads().some(thread => thread.id === id)) id = 'main';
+  chat.thread = id;
+  saved.set('thread', id);
+  chat.unread.delete(id);
+  renderThreads();
+  const thread = allThreads().find(item => item.id === id) || {id};
+  chat.title.textContent = threadTitle(thread);
+  chat.subtitle.textContent = thread.conversation || '';
+  const box = chat.box;
+  const generation = ++chat.generation;
+  Object.assign(chat, {ids: new Set(), unreceipted: [], outgoing: [], loading: true, queue: []});
+  box.replaceChildren(placeholder('Loading…'));
+  try {
+    const data = await api('/api/history?thread=' + encodeURIComponent(id));
+    if (generation !== chat.generation) return;
+    box.replaceChildren();
+    chat.subtitle.textContent = data.conversation;
+    if (data.truncated) box.append(placeholder('Older messages are in oppa history.'));
+    data.events.forEach(addEvent);
+    if (!data.events.length) box.append(h('div', {class: 'placeholder empty', text: 'No messages yet. Write below to start.'}));
+  } catch (error) {
+    if (generation !== chat.generation) return;
+    box.replaceChildren(problem(error.message));
+  }
+  chat.loading = false;
+  chat.queue.splice(0).forEach(acceptItem);
+  showTyping();
+  scrollDown(true);
+}
+
+const DELIVERY = {queued: 'Not delivered', unknown: 'Delivery unknown', sending: 'Sending'};
+
+function eventCard(event) {
+  let label = event.kind;
+  let text = event.body || '';
+  try {
+    const data = JSON.parse(text);
+    if (event.kind === 'schedule') { label = 'Scheduled job' + (data.schedule ? ' · ' + data.schedule : ''); text = data.prompt || text; }
+    if (event.kind === 'heartbeat') { label = 'Heartbeat'; text = 'Looking at what is new' + (data.previous ? ' since ' + when(data.previous) : ''); }
+    if (event.kind === 'task_result') { label = 'Background task' + (data.state ? ' · ' + data.state : ''); text = data.brief || text; }
+  } catch (_) { /* shown as it is */ }
+  return h('div', {class: 'event-card'}, h('div', {class: 'event-label'}, h('span', {text: label}), h('span', {text: when(event.created_at)})),
+    h('div', {class: 'event-text clamp', text}));
+}
+
+function addEvent(event) {
+  const box = chat.box;
+  const empty = box.querySelector('.empty');
+  if (empty) empty.remove();
+  let el;
+  if ((event.kind || 'message') !== 'message') {
+    el = eventCard(event);
+  } else {
+    const state = event.direction === 'out' && DELIVERY[event.delivery];
+    const meta = h('div', {class: 'meta'}, when(event.created_at), state ? ' · ' + state : '');
+    el = event.direction === 'out'
+      ? h('div', {class: 'msg out'}, h('div', {class: 'md', html: markdown(event.body || '')}), meta)
+      : h('div', {class: 'msg in'}, h('div', {class: 'plain', text: event.body || ''}), meta);
+  }
+  if (event.native_id) chat.ids.add(event.native_id);
+  else if (event.direction === 'out' && event.kind === 'message') chat.unreceipted.push({body: event.body, el});
+  box.insertBefore(el, box.querySelector('.typing'));
+  return el;
+}
+
+// The feed and the log can both show a message: match it once, by native id,
+// or by text for a reply logged before its receipt or a message still posting.
+function acceptItem(item) {
+  if (chat.loading) { chat.queue.push(item); return; }
+  if (chat.ids.has(item.native_id)) return;
+  if (item.direction === 'out') {
+    const index = chat.unreceipted.findIndex(entry => entry.body === item.body);
+    if (index >= 0) { chat.unreceipted.splice(index, 1); chat.ids.add(item.native_id); return; }
+  } else {
+    const mine = chat.outgoing.find(entry => !entry.id && entry.body === item.body);
+    if (mine) { mine.id = item.native_id; chat.ids.add(item.native_id); mine.el.classList.remove('pending'); return; }
+  }
+  addEvent({direction: item.direction, kind: 'message', body: item.body, created_at: item.at, native_id: item.native_id,
+    delivery: item.direction === 'out' ? 'sent' : null});
+  scrollDown(false);
+}
+
+async function sendMessage() {
+  const text = chat.input.value;
+  if (!text.trim() || !chat.box || chat.loading) return;
+  const thread = chat.thread;
+  chat.input.value = '';
+  grow(chat.input);
+  chat.problem.textContent = '';
+  const entry = {body: text.replace(/\r\n?/g, '\n'), id: null, el: null};
+  entry.el = addEvent({direction: 'in', kind: 'message', body: entry.body, created_at: new Date().toISOString()});
+  entry.el.classList.add('pending');
+  chat.outgoing.push(entry);
+  chat.waitingSince[thread] = Date.now();
+  showTyping();
+  scrollDown(true);
+  try {
+    const data = await api('/api/send', {method: 'POST', body: {thread, body: text}});
+    if (!entry.id) { entry.id = data.item.native_id; chat.ids.add(entry.id); }
+    entry.el.classList.remove('pending');
+    if (!chat.threads.some(item => item.id === thread)) loadThreads();
+  } catch (error) {
+    entry.el.classList.remove('pending');
+    entry.el.classList.add('failed');
+    entry.el.append(h('div', {class: 'msg-problem', text: 'Not sent: ' + error.message}));
+    delete chat.waitingSince[thread];
+    showTyping();
+    if (!chat.input.value) { chat.input.value = text; grow(chat.input); }
+  }
+}
+
+async function newThread() {
+  try {
+    const data = await api('/api/threads', {method: 'POST', body: {}});
+    chat.drafts.push({id: data.id, title: 'New chat', created_at: new Date().toISOString(), last_event_at: null, conversation: null});
+    await openThread(data.id);
+    if (chat.input) chat.input.focus();
+  } catch (error) {
+    toast(error.message, 'bad');
+  }
+}
+
+// Typing dots show that a reply is due, never what it says. They stop when a
+// reply arrives, or after five minutes without one.
+function showTyping() {
+  if (!chat.box) return;
+  const since = chat.waitingSince[chat.thread];
+  const on = Boolean(since) && Date.now() - since < 300000 && !chat.loading;
+  const dots = chat.box.querySelector('.typing');
+  if (on && !dots) {
+    chat.box.append(h('div', {class: 'typing', role: 'status', 'aria-label': 'A reply is on its way'}, h('span'), h('span'), h('span')));
+    scrollDown(false);
+  } else if (!on && dots) {
+    dots.remove();
+  }
+}
+
+function applyWaiting(waiting) {
+  for (const [thread, age] of Object.entries(waiting || {})) chat.waitingSince[thread] = Date.now() - age * 1000;
+}
+
+function scrollDown(force) {
+  const box = chat.box;
+  if (box && (force || box.scrollHeight - box.scrollTop - box.clientHeight < 160)) box.scrollTop = box.scrollHeight;
+}
+
+async function poll() {
+  let pause = 1000;
+  for (;;) {
+    try {
+      const data = await api('/api/feed?after=' + chat.cursor + '&epoch=' + encodeURIComponent(chat.epoch) + '&timeout=25');
+      setLink(true);
+      pause = 1000;
+      chat.epoch = data.epoch;
+      chat.cursor = data.cursor;
+      applyWaiting(data.waiting);
+      if (data.reset) {
+        // The channel restarted or the page fell behind: reload from the log.
+        if (chat.box) loadThreads().then(() => openThread(chat.thread));
+        continue;
+      }
+      for (const item of data.items) {
+        if (item.direction === 'out') delete chat.waitingSince[item.thread];
+        if (chat.box && item.thread === chat.thread) acceptItem(item);
+        else if (item.direction === 'out') chat.unread.add(item.thread);
+        touchThread(item.thread, item.at);
+      }
+      renderThreads();
+      showTyping();
+    } catch (error) {
+      if (error.status === 401) return;
+      setLink(false);
+      await sleep(pause);
+      pause = Math.min(pause * 2, 15000);
+    }
+  }
+}
+
+// Schedules ---------------------------------------------------------------------
+
+const WEEKDAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
+const LAST_STATE = {
+  completed: ['ok', 'check', 'Completed'], failed: ['bad', 'cross', 'Failed'], delivery_unknown: ['warn', 'alert', 'Delivery unknown'],
+  started: ['warn', 'alert', 'Started, not finished'], recorded: ['', null, 'Waiting to run'],
+};
+
+function stateBadge(state) {
+  const [kind, glyph, label] = LAST_STATE[state] || ['', null, state || 'Unknown'];
+  return h('span', {class: 'badge ' + kind}, glyph ? icon(glyph) : null, label);
+}
+
+// A schedule's HH:MM in the same local style as the slots beside it.
+function clock(at) {
+  const match = /^(\d{2}):(\d{2})$/.exec(at || '');
+  if (!match) return at || '';
+  const date = new Date();
+  date.setHours(Number(match[1]), Number(match[2]), 0, 0);
+  return date.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+}
+
+function scheduleWhen(schedule) {
+  if (schedule.date) {
+    const day = new Date(schedule.date + 'T12:00:00');
+    const text = isNaN(day) ? schedule.date : day.toLocaleDateString([], {weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'});
+    return clock(schedule.at) + ', once on ' + text;
+  }
+  const days = (schedule.days || []).map(day => (WEEKDAYS.find(([key]) => key === String(day).toLowerCase()) || [day, day])[1]);
+  return clock(schedule.at) + (days.length && days.length < 7 ? ' on ' + days.join(', ') : ' every day');
+}
+
+function conversationLabel(conversation) {
+  if (conversation.id === 'console') return 'Console';
+  const title = conversation.title || conversation.id.split('/').slice(2).join('/');
+  return title + ' (' + conversation.channel + ')';
+}
+
+function viewSchedules(view) {
+  const where = h('select', {'aria-label': 'Conversation'}, h('option', {value: ''}, 'Loading…'));
+  const at = h('input', {type: 'time', value: '08:00', 'aria-label': 'Time'});
+  const date = h('input', {type: 'date', 'aria-label': 'Date for a one-off job'});
+  const days = WEEKDAYS.map(([key, label]) => {
+    const box = h('input', {type: 'checkbox', value: key});
+    return {key, box, el: h('label', {class: 'day'}, box, h('span', {text: label}))};
+  });
+  const prompt = h('textarea', {rows: '3', maxlength: '8000', 'aria-label': 'Instruction',
+    placeholder: 'What should the assistant do? For example: post today’s weather and anything on the family calendar.'});
+  const formProblem = h('p', {class: 'form-problem', role: 'alert'});
+  const create = h('button', {class: 'btn primary', type: 'button'}, 'Schedule it');
+  const showAll = h('input', {type: 'checkbox'});
+  const list = h('div', {}, placeholder('Loading…'));
+  const names = {};
+  date.addEventListener('change', () => days.forEach(day => { day.box.disabled = Boolean(date.value); if (date.value) day.box.checked = false; }));
+  showAll.addEventListener('change', load);
+  create.addEventListener('click', submit);
+  view.append(
+    pageHead('Scheduled jobs', 'Standing instructions the assistant carries out at a set time, in the conversation you choose. It does the work and writes any message itself.'),
+    h('div', {class: 'card'},
+      h('div', {class: 'card-head'}, h('h2', {text: 'New job'})),
+      h('div', {class: 'form-grid'},
+        h('label', {class: 'field'}, 'Where', where),
+        h('label', {class: 'field'}, 'Time', at),
+        h('label', {class: 'field'}, h('span', {}, 'Date ', h('small', {text: '(only for a one-off)'})), date),
+        h('div', {class: 'field'}, h('span', {}, 'Weekdays ', h('small', {text: '(none means every day)'})), h('div', {class: 'days'}, days.map(day => day.el)))),
+      h('label', {class: 'field'}, 'Instruction', prompt),
+      h('div', {class: 'actions'}, formProblem, create)),
+    h('div', {class: 'card'},
+      h('div', {class: 'card-head'}, h('h2', {text: 'Jobs'}), h('div', {class: 'tools'}, h('label', {class: 'inline'}, showAll, 'Show cancelled'), refresh(load))),
+      list));
+
+  async function loadConversations() {
+    try {
+      const data = await api('/api/conversations');
+      const usable = data.conversations.filter(conversation => conversation.id !== 'console');
+      usable.forEach(conversation => { names[conversation.id] = conversationLabel(conversation); });
+      if (!usable.length) {
+        where.replaceChildren(h('option', {value: ''}, 'No conversations yet: send a message first'));
+        create.disabled = true;
+      } else {
+        const preferred = usable.find(conversation => conversation.id.endsWith('/main') && conversation.channel === app.session.channel);
+        where.replaceChildren(...usable.map(conversation => h('option', {value: conversation.id, selected: preferred === conversation}, names[conversation.id])));
+      }
+    } catch (error) {
+      where.replaceChildren(h('option', {value: ''}, 'Conversations unavailable'));
+      formProblem.textContent = error.message;
+    }
+  }
+
+  async function load() {
+    try {
+      const data = await api('/api/schedules' + (showAll.checked ? '?all=1' : ''));
+      list.replaceChildren(table(data.schedules));
+    } catch (error) {
+      list.replaceChildren(problem(error.message));
+    }
+  }
+
+  function table(items) {
+    if (!items.length) return placeholder(showAll.checked ? 'No scheduled jobs.' : 'No scheduled jobs yet.');
+    const cell = (label, ...content) => h('td', {'data-label': label}, content);
+    return h('table', {class: 'table stack'},
+      h('thead', {}, h('tr', {}, ['Instruction', 'When', 'Where', 'Next run', 'Last run', 'Created by', ''].map(text => h('th', {text})))),
+      h('tbody', {}, items.map(schedule => h('tr', {class: schedule.cancelled_at ? 'cancelled' : null},
+        cell('Instruction', h('div', {class: 'clamp wrap', title: schedule.prompt || '', text: schedule.prompt || ''})),
+        cell('When', scheduleWhen(schedule)),
+        cell('Where', h('span', {class: 'wrap', text: names[schedule.conversation] || schedule.conversation})),
+        cell('Next run', schedule.cancelled_at ? 'Cancelled ' + when(schedule.cancelled_at)
+          : schedule.blocked ? h('span', {class: 'warn-text', text: 'Blocked: ' + schedule.blocked})
+          : schedule.next_slot ? when(schedule.next_slot) : schedule.enabled === false ? 'Turned off' : '—'),
+        cell('Last run', schedule.last_fired_slot ? [when(schedule.last_fired_slot), ' ', stateBadge(schedule.last_state)] : 'Not yet'),
+        cell('Created by', schedule.created_by === 'assistant' ? 'Assistant' : schedule.created_by === 'owner' ? 'You' : schedule.created_by || '—'),
+        h('td', {class: 'bare'}, schedule.cancelled_at ? null : h('button', {class: 'btn small', type: 'button', onclick: () => cancel(schedule)}, 'Cancel'))))));
+  }
+
+  async function cancel(schedule) {
+    const snippet = (schedule.prompt || schedule.id).slice(0, 80);
+    const confirmed = await ask({title: 'Cancel this job?', body: ['“' + snippet + '”', 'It will not run again. Its earlier runs stay in history.'],
+      confirm: 'Cancel the job', cancel: 'Keep it', danger: true});
+    if (!confirmed) return;
+    try {
+      await api('/api/schedules/cancel', {method: 'POST', body: {id: schedule.id}});
+      toast('Cancelled.');
+    } catch (error) {
+      toast(error.message, 'bad');
+    }
+    load();
+  }
+
+  async function submit() {
+    formProblem.textContent = '';
+    const body = {conversation: where.value, at: at.value, date: date.value || null,
+      days: days.filter(day => day.box.checked).map(day => day.key), prompt: prompt.value.trim()};
+    if (!body.conversation) { formProblem.textContent = 'Choose the conversation the job runs in.'; return; }
+    if (!/^\d{2}:\d{2}$/.test(body.at)) { formProblem.textContent = 'Choose a time.'; return; }
+    if (!body.prompt) { formProblem.textContent = 'Write the instruction.'; return; }
+    create.disabled = true;
+    try {
+      await api('/api/schedules', {method: 'POST', body});
+      toast('Scheduled for ' + scheduleWhen(body) + '.');
+      prompt.value = '';
+      date.value = '';
+      days.forEach(day => { day.box.checked = false; day.box.disabled = false; });
+      load();
+    } catch (error) {
+      formProblem.textContent = error.message;
+    } finally {
+      create.disabled = false;
+    }
+  }
+
+  loadConversations().then(load);
+}
+
+// Access ------------------------------------------------------------------------
+
+const LEVELS = [
+  {id: 'read', name: 'Read', text: 'Reads and answers from its memory, your conversations and the Mac’s calendars and reminders (with Claude, also your Gmail, Calendar and Drive), and sends, changes or deletes nothing in your accounts.'},
+  {id: 'connectors', name: 'Connectors', text: 'Your harness as you set it up: every account, MCP server and plugin you connected in Claude or Codex, web search and your browser. It can send, change and delete there without asking first, but confirms before opening your home or moving money. No shell or files.'},
+  {id: 'computer', name: 'Full', text: 'Everything in Connectors, plus this Mac’s shell and files: it builds skills for what you ask, writes and runs programs, keeps the knowledge wiki and the daily memory sync, and can propose changes to its own code for you to review.'},
+];
+
+function viewAccess(view) {
+  const levels = h('div', {class: 'levels', role: 'radiogroup', 'aria-label': 'Access level'}, placeholder('Loading…'));
+  const facts = h('div', {}, placeholder('Loading…'));
+  view.append(
+    pageHead('Access', 'How far the assistant may act for you, in your conversations and in the background tasks they start.'),
+    h('div', {class: 'card'}, levels),
+    h('div', {class: 'card'}, h('div', {class: 'card-head'}, h('h2', {text: 'Configuration'}), h('span', {class: 'muted', text: 'Read-only here: edit the private config.toml and restart oppa serve.'})), facts));
+
+  async function load() {
+    try {
+      const data = await api('/api/settings');
+      render(data.settings);
+    } catch (error) {
+      levels.replaceChildren(problem(error.message));
+      facts.replaceChildren(problem(error.message));
+    }
+  }
+
+  function render(settings) {
+    const current = LEVELS.find(level => level.id === settings.access);
+    levels.replaceChildren(...LEVELS.map(level => h('button', {
+      type: 'button', class: 'level', role: 'radio', 'aria-checked': String(level === current), onclick: () => change(level, current),
+    }, h('span', {class: 'level-name'}, level.name, level === current ? h('span', {class: 'badge accent', text: 'Current'}) : null), h('p', {text: level.text}))));
+    const list = (items, describe) => (items && items.length ? items.map(describe).join(', ') : 'None');
+    facts.replaceChildren(h('dl', {class: 'facts'},
+      h('dt', {text: 'Owner'}), h('dd', {text: settings.owner || '—'}),
+      h('dt', {text: 'Agents'}), h('dd', {text: list(settings.agents, agent => agent.id + ' (' + agent.family + ')')}),
+      h('dt', {text: 'Channels'}), h('dd', {text: list(settings.channels, channel => channel.id + ' (' + channel.account + ')')}),
+      h('dt', {text: 'Model and effort'}), h('dd', {text: list(settings.agents, agent => agent.id + ': ' + (agent.model || 'harness default') + ', ' + (agent.effort || 'medium'))}),
+      h('dt', {text: 'Browser'}), h('dd', {text: settings.browser === false ? 'Off' : settings.access === 'read' ? 'On, used only at Connectors and Full' : 'On'}),
+      h('dt', {text: 'Connectors'}), h('dd', {text: list(settings.connectors, connector => connector.id + ' (' + connector.kind + ')')}),
+      h('dt', {text: 'Skills it built'}), h('dd', {text: list(settings.skills, skill => skill.name)}),
+      h('dt', {text: 'Knowledge wiki'}), h('dd', {class: 'mono', text: settings.knowledge || 'None'}),
+      h('dt', {text: 'Memory sync'}), h('dd', {text: !settings.memory_sync ? 'Off' : settings.access === 'computer' ? 'Daily at ' + settings.memory_sync : 'Set for ' + settings.memory_sync + ', runs only at Full access'}),
+      h('dt', {text: 'Source checkout'}), h('dd', {class: 'mono', text: settings.source || 'Not set'})));
+  }
+
+  async function change(level, current) {
+    if (level === current) return;
+    const wider = !current || LEVELS.indexOf(level) > LEVELS.indexOf(current);
+    const confirmed = await ask({title: 'Change access to ' + level.name + '?',
+      body: [level.text, 'This applies from the next turn. A turn already running keeps the access it started with.'],
+      confirm: 'Change to ' + level.name, cancel: current ? 'Keep ' + current.name : 'Cancel', danger: wider});
+    if (!confirmed) return;
+    try {
+      await api('/api/settings/access', {method: 'POST', body: {access: level.id}});
+      toast('Access is now ' + level.name + '. It applies from the next turn.');
+    } catch (error) {
+      toast(error.message, 'bad');
+    }
+    load();
+  }
+
+  load();
+}
+
+// Notes -------------------------------------------------------------------------
+
+const TEMPLATES = {
+  persona: [
+    '# Persona',
+    '',
+    '<!-- Starter template. Every line below is an example: replace it with your own words, then save. -->',
+    '',
+    'How the assistant sounds and behaves with me.',
+    '',
+    '- Tone: warm and direct. Short sentences, no filler.',
+    '- Language: answer in the language I write in.',
+    '- Length: a line or two for simple questions; more only when I ask.',
+    '- Humour: light, never at anyone\'s expense.',
+    '- When unsure: ask one clear question, then wait.',
+    '- Avoid: emoji, exclamation marks and status jargon.',
+    '',
+  ].join('\n'),
+  rules: [
+    '# Rules',
+    '',
+    '<!-- Starter template. These rules are examples: replace them with your own, then save. -->',
+    '',
+    '## In groups',
+    '- Answer when someone asks you something or when it clearly helps; otherwise stay quiet.',
+    '- Never repeat what I told you in private unless I said it is fine.',
+    '',
+    '## With friends and guests',
+    '- Help with plans and logistics. Keep health, money and work details out of it.',
+    '',
+    '## What may be shared with whom',
+    '- The family calendar: anyone in the family group.',
+    '- My travel plans: family only.',
+    '',
+    '## Pre-approved actions',
+    '- Pay utility bills under $200 without asking.',
+    '- Accept calendar invitations from family members.',
+    '',
+  ].join('\n'),
+  person: name => [
+    '# ' + name,
+    '',
+    '<!-- Starter template: replace each line with what is true, then save. -->',
+    '',
+    '- Who they are to me:',
+    '- Handles (phone, email, chat):',
+    '- What the assistant may tell them:',
+    '- What to keep from them:',
+    '- Notes:',
+    '',
+  ].join('\n'),
+};
+
+function noteEditor(path, template, onSaved) {
+  const status = h('span', {class: 'note-status'});
+  const area = h('textarea', {class: 'editor', spellcheck: 'true', 'aria-label': path});
+  const notice = h('div', {class: 'notice', role: 'alert', hidden: true});
+  const body = h('div', {}, placeholder('Loading…'));
+  const save = h('button', {class: 'btn primary', type: 'button', disabled: true}, 'Save');
+  const discard = h('button', {class: 'btn', type: 'button', disabled: true}, 'Discard changes');
+  let loaded = null;
+
+  function changed() {
+    if (!loaded) return;
+    const dirty = area.isConnected && area.value !== loaded.content;
+    if (dirty) app.dirty = path;
+    else if (app.dirty === path) app.dirty = null;
+    save.disabled = !dirty;
+    discard.disabled = !dirty;
+    status.textContent = dirty ? 'Unsaved changes' : loaded.exists ? 'Saved · vault ' + loaded.revision.slice(0, 7) : 'Not created yet';
+  }
+
+  function fill(note) {
+    loaded = note;
+    if (note.exists) {
+      area.value = note.content;
+      body.replaceChildren(area);
+    } else {
+      area.value = '';
+      body.replaceChildren(h('div', {class: 'missing'}, h('p', {text: 'This note does not exist yet.'}),
+        h('div', {class: 'actions'},
+          h('button', {class: 'btn primary', type: 'button', onclick: () => begin(template)}, 'Start from a template'),
+          h('button', {class: 'btn', type: 'button', onclick: () => begin('')}, 'Start empty'))));
+    }
+    changed();
+  }
+
+  function begin(text) {
+    area.value = text;
+    body.replaceChildren(area);
+    area.focus();
+    changed();
+  }
+
+  async function load() {
+    try {
+      fill((await api('/api/note?path=' + encodeURIComponent(path))).note);
+    } catch (error) {
+      body.replaceChildren(problem(error.message));
+    }
+  }
+
+  async function store() {
+    const mine = area.value;
+    save.disabled = true;
+    notice.hidden = true;
+    try {
+      const data = await api('/api/note', {method: 'PUT', body: {path, content: mine, version: loaded.version}});
+      fill(data.note);
+      toast(data.saved ? 'Saved.' : 'Nothing changed.');
+      if (onSaved) onSaved();
+    } catch (error) {
+      if (error.data.conflict && error.data.note) {
+        fill(error.data.note);
+        notice.replaceChildren(h('p', {text: error.message}),
+          h('button', {class: 'btn small', type: 'button', onclick: () => { begin(mine); notice.hidden = true; }}, 'Put my text back'));
+        notice.hidden = false;
+      } else {
+        toast(error.message, 'bad');
+        changed();
+      }
+    }
+  }
+
+  area.addEventListener('input', changed);
+  save.addEventListener('click', store);
+  discard.addEventListener('click', () => { notice.hidden = true; fill(loaded); });
+  load();
+  return h('div', {class: 'card'}, h('div', {class: 'card-head'}, h('code', {class: 'path', text: path}), status), notice, body,
+    h('div', {class: 'actions'}, discard, save));
+}
+
+function viewPersonality(view) {
+  view.append(pageHead('Personality', 'How the assistant sounds and behaves: tone, language, length, what to avoid. Plain words are enough.'),
+    noteEditor('assistant/persona.md', TEMPLATES.persona));
+}
+
+function viewRules(view) {
+  view.append(pageHead('Rules', 'How to act in groups and with friends, what may be shared with whom, and which actions are pre-approved, for example “pay utility bills under $200 without asking”.'),
+    noteEditor('assistant/rules.md', TEMPLATES.rules));
+}
+
+function slugify(name) {
+  return name.trim().toLowerCase().normalize('NFKC').replace(/\s+/g, '-').replace(/[^\p{L}\p{N}._-]/gu, '').replace(/^[.-]+/, '').slice(0, 64);
+}
+
+function viewPeople(view) {
+  const list = h('div', {class: 'people-list'}, placeholder('Loading…'));
+  const editor = h('div', {}, h('div', {class: 'card'}, placeholder('Choose a person, or add one.')));
+  const name = h('input', {type: 'text', placeholder: 'Name', 'aria-label': 'Name of a person to add'});
+  const add = h('button', {class: 'btn', type: 'button'}, icon('plus'), h('span', {text: 'Add'}));
+  let people = [];
+  let active = null;
+  view.append(
+    pageHead('People', 'What the assistant knows about the people in your life: who they are to you, how to reach them and what they may be told. Each person is the vault note people/<name>/profile.md.'),
+    h('div', {class: 'people'}, h('div', {class: 'card'}, h('div', {class: 'add-person'}, name, add), list), editor));
+
+  async function load() {
+    try {
+      people = (await api('/api/people')).people;
+      render();
+    } catch (error) {
+      list.replaceChildren(problem(error.message));
+    }
+  }
+
+  // The profile's own heading names the person; the rest of it, without
+  // comments, is the preview.
+  function describe(person) {
+    const text = person.profile ? person.profile.excerpt.replace(/<!--[\s\S]*?(-->|$)/g, ' ') : '';
+    const heading = text.match(/^\s*#\s+(.+)/);
+    const preview = text.replace(/^\s*#\s+.+/, '').replace(/\s+/g, ' ').trim();
+    return {display: heading ? heading[1].trim() : person.name,
+      preview: person.profile ? preview || 'Empty profile' : 'No profile yet' + (person.notes.length ? ' · ' + person.notes.length + ' other notes' : '')};
+  }
+
+  function render() {
+    if (!people.length) { list.replaceChildren(placeholder('No people notes yet.')); return; }
+    list.replaceChildren(...people.map(person => {
+      const {display, preview} = describe(person);
+      return h('button', {class: 'person' + (person.name === active ? ' active' : ''), type: 'button', onclick: () => open(person.name, display)},
+        h('span', {class: 'person-name', text: display}), h('span', {class: 'person-excerpt', text: preview}));
+    }));
+  }
+
+  async function open(slug, display) {
+    if (app.dirty && !(await ask({title: 'Leave without saving?', body: 'Your changes to ' + app.dirty + ' are not saved yet.', confirm: 'Leave', cancel: 'Stay'}))) return;
+    app.dirty = null;
+    active = slug;
+    render();
+    editor.replaceChildren(h('h2', {class: 'editor-title', text: display}), noteEditor('people/' + slug + '/profile.md', TEMPLATES.person(display), load));
+  }
+
+  function addPerson() {
+    const display = name.value.trim();
+    const slug = slugify(display);
+    if (!slug) { toast('Write a name first.', 'bad'); return; }
+    name.value = '';
+    open(slug, display);
+  }
+
+  add.addEventListener('click', addPerson);
+  name.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) addPerson(); });
+  load();
+}
+
+// Developer views ---------------------------------------------------------------
+
+function viewHealth(view) {
+  view.append(pageHead('Health', 'Readiness checks from oppa doctor, background tasks, and replies the outbox has not confirmed as sent.'));
+  const doctor = h('div', {}, placeholder('Running oppa doctor…'));
+  const tasks = h('div', {}, placeholder('Loading…'));
+  const outbox = h('div', {}, placeholder('Loading…'));
+  const card = (title, box, action) => h('div', {class: 'card'}, h('div', {class: 'card-head'}, h('h2', {text: title}), refresh(action)), box);
+  view.append(card('Doctor', doctor, loadDoctor), card('Background tasks', tasks, loadTasks), card('Outbox', outbox, loadOutbox));
+
+  async function loadDoctor() {
+    doctor.replaceChildren(placeholder('Running oppa doctor…'));
+    try {
+      const data = await api('/api/dev/doctor');
+      const checks = Array.isArray(data.checks) ? data.checks : [];
+      doctor.replaceChildren(
+        h('p', {}, data.ready ? h('span', {class: 'badge ok'}, icon('check'), 'Ready') : h('span', {class: 'badge bad'}, icon('cross'), 'Not ready')),
+        h('ul', {class: 'checks'}, checks.map(check => {
+          const subject = check.agent || check.id || '';
+          const shown = ([key, value]) => !['check', 'ready', 'agent', 'id'].includes(key) && value !== null
+            && !(Array.isArray(value) && !value.length) && !(key === 'repair' && check.ready);
+          const details = Object.entries(check).filter(shown)
+            .map(([key, value]) => key.replace(/_/g, ' ') + ': ' + (typeof value === 'string' ? value : JSON.stringify(value))).join(' · ');
+          const name = String(check.check || 'check').replace(/_/g, ' ');
+          return h('li', {}, check.ready ? icon('check', 'yes') : icon('cross', 'no'),
+            h('div', {}, h('div', {text: name.charAt(0).toUpperCase() + name.slice(1) + (subject ? ' · ' + subject : '')}),
+              details ? h('div', {class: 'check-detail', text: details}) : null));
+        })),
+        h('details', {}, h('summary', {text: 'Raw output'}), h('pre', {class: 'output', text: JSON.stringify(data.checks, null, 2)})));
+    } catch (error) {
+      doctor.replaceChildren(problem(error.message));
+    }
+  }
+
+  async function loadTasks() {
+    try {
+      const items = (await api('/api/dev/tasks')).tasks;
+      tasks.replaceChildren(items.length ? h('table', {class: 'table stack'},
+        h('thead', {}, h('tr', {}, ['Task', 'Agent', 'State', 'Updated', 'Diagnostic'].map(text => h('th', {text})))),
+        h('tbody', {}, items.map(task => h('tr', {},
+          h('td', {'data-label': 'Task'}, h('div', {class: 'clamp wrap', text: (task.spec && task.spec.brief) || task.id})),
+          h('td', {'data-label': 'Agent', text: (task.spec && task.spec.agent) || '—'}),
+          h('td', {'data-label': 'State'}, h('span', {class: 'badge', text: String(task.state)})),
+          h('td', {'data-label': 'Updated', text: when(task.updated_at)}),
+          h('td', {'data-label': 'Diagnostic', class: 'wrap', text: task.diagnostic || '—'}))))) : placeholder('No background tasks.'));
+    } catch (error) {
+      tasks.replaceChildren(problem(error.message));
+    }
+  }
+
+  async function loadOutbox() {
+    try {
+      const items = (await api('/api/dev/outbox')).outbox;
+      outbox.replaceChildren(items.length ? h('table', {class: 'table stack'},
+        h('thead', {}, h('tr', {}, ['Conversation', 'State', 'Attempts', 'Evidence', 'Message'].map(text => h('th', {text})))),
+        h('tbody', {}, items.map(entry => h('tr', {},
+          h('td', {'data-label': 'Conversation', class: 'mono wrap', text: (entry.destination && entry.destination.id) || '—'}),
+          h('td', {'data-label': 'State'}, h('span', {class: 'badge ' + (entry.state === 'unknown' ? 'warn' : ''), text: String(entry.state)})),
+          h('td', {'data-label': 'Attempts', class: 'num', text: String(entry.attempts)}),
+          h('td', {'data-label': 'Evidence', class: 'wrap', text: entry.evidence || '—'}),
+          h('td', {'data-label': 'Message'}, h('div', {class: 'clamp wrap', text: (entry.event && entry.event.body) || ''})))))) : placeholder('Nothing waiting: every reply is confirmed as sent.'));
+    } catch (error) {
+      outbox.replaceChildren(problem(error.message));
+    }
+  }
+
+  loadDoctor();
+  loadTasks();
+  loadOutbox();
+}
+
+const VIEWS = {
+  chat: viewChat, schedules: viewSchedules, access: viewAccess, personality: viewPersonality, rules: viewRules, people: viewPeople,
+  health: viewHealth,
+};
+
+// Start -------------------------------------------------------------------------
+
+async function start() {
+  for (const button of document.querySelectorAll('.modes button')) {
+    button.addEventListener('click', () => openTab(button.dataset.mode, app.tab[button.dataset.mode]));
+  }
+  try {
+    app.session = await api('/api/session');
+  } catch (error) {
+    if (error.status !== 401) $('#view').replaceChildren(problem(error.message));
+    return;
+  }
+  try {
+    const first = await api('/api/feed?after=0&timeout=0');
+    chat.epoch = first.epoch;
+    chat.cursor = first.cursor;
+    applyWaiting(first.waiting);
+    setLink(true);
+  } catch (_) {
+    setLink(false);
+  }
+  for (const mode of Object.keys(TABS)) {
+    const tab = saved.get('tab.' + mode, '');
+    app.tab[mode] = TABS[mode].some(([id]) => id === tab) ? tab : TABS[mode][0][0];
+  }
+  const mode = saved.get('mode', 'user');
+  openTab(TABS[mode] ? mode : 'user', app.tab[TABS[mode] ? mode : 'user']);
+  poll();
+  setInterval(showTyping, 15000);
+  window.addEventListener('beforeunload', event => { if (app.dirty) { event.preventDefault(); event.returnValue = ''; } });
+}
+
+start();
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+[package]
+name = "oppa"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "Apache-2.0"
+description = "Open Personal Assistant: a local-first chief of staff with portable context and tools"
+publish = false
+
+[[bin]]
+name = "oppa"
+path = "src/main.rs"
+
+[[bin]]
+name = "oppa-launch"
+path = "src/bin/oppa-launch/main.rs"
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive", "env"] }
+libc = "0.2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+toml = "0.8"
+toml_edit = "0.22"
+
+[dev-dependencies]
+tempfile = "3"

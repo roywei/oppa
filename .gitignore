@@ -1,0 +1,16 @@
+/target/
+/dist/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.db
+*.db-*
+*.sqlite*
+*.log
+*.pem
+*.key
+__pycache__/
+/private/
+/runtime/
+/state/

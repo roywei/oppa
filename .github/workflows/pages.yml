@@ -1,0 +1,33 @@
+name: pages
+
+# Publishes site/ to GitHub Pages, run by hand. Pages must first be enabled
+# (Settings, Pages, Source: GitHub Actions); while the repository is private and
+# has no Pages site, a push trigger would only fail. Add one once it is published.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      # Social previews need a raster image; the repository keeps only the SVG.
+      - run: sudo apt-get update && sudo apt-get install -y librsvg2-bin && rsvg-convert -w 1200 -h 630 site/assets/og-cover.svg -o site/assets/og-cover.png
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

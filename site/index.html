@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>OPPA · Open Personal Assistant</title>
+<meta name="description" content="A self-hosted assistant for you and your household. It runs on your Mac with your Claude Code or Codex subscription.">
+<meta property="og:title" content="OPPA · Open Personal Assistant">
+<meta property="og:description" content="A self-hosted assistant for you and your household, on your own Mac.">
+<meta property="og:image" content="https://roywei.github.io/oppa/assets/og-cover.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/oppa-icon.svg" type="image/svg+xml">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f7f9fe;
+  --surface: #ffffff;
+  --surface-2: #eff3fc;
+  --border: #dce3f0;
+  --text: #171b27;
+  --muted: #566079;
+  --accent: #315eda;
+  --accent-soft: #e9f0ff;
+  --on-accent: #ffffff;
+  --owner-bubble: #315eda;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111827;
+    --surface: #192235;
+    --surface-2: #202c42;
+    --border: #35425a;
+    --text: #f6f8ff;
+    --muted: #b5c1d8;
+    --accent: #a9c0ff;
+    --accent-soft: #1f2f57;
+    --on-accent: #111827;
+    --owner-bubble: #3654b0;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.6 var(--font); -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+header.wrap { display: flex; align-items: center; justify-content: space-between; height: 76px; }
+header img { height: 40px; display: block; }
+nav a { margin-left: 22px; color: var(--muted); font-weight: 560; text-decoration: none; }
+nav a:hover { color: var(--text); }
+.hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center; padding: 56px 24px 80px; }
+.eyebrow { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+h1 { margin: 12px 0 18px; font-size: clamp(40px, 5.4vw, 64px); line-height: 1.04; letter-spacing: -.03em; }
+h1 span { color: var(--accent); }
+.lede { max-width: 34em; margin: 0 0 28px; color: var(--muted); font-size: 19px; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn { display: inline-flex; align-items: center; padding: 12px 22px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); font-weight: 650; text-decoration: none; }
+.btn.primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.chat { padding: 22px; background: var(--surface); border: 1px solid var(--border); border-radius: 28px; box-shadow: 0 18px 60px #182f6514; }
+.chat-head { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid var(--border); font-weight: 650; }
+.chat-head img { width: 36px; height: 36px; }
+.chat-head small { margin-left: auto; color: var(--muted); font-weight: 500; font-size: 12px; }
+.msg { max-width: 88%; margin: 0 0 12px; padding: 10px 15px; border-radius: 18px; font-size: 15px; line-height: 1.5; }
+.msg.in { margin-left: auto; background: var(--owner-bubble); color: #fff; border-bottom-right-radius: 6px; }
+.msg.out { background: var(--surface-2); border-bottom-left-radius: 6px; }
+.msg ul { margin: 6px 0; padding-left: 20px; }
+section { padding: 72px 0; border-top: 1px solid var(--border); }
+h2 { margin: 0 0 10px; font-size: clamp(28px, 3.4vw, 40px); letter-spacing: -.02em; line-height: 1.15; }
+.section-lede { max-width: 40em; margin: 0 0 36px; color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.card { padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; }
+.card h3 { margin: 0 0 6px; font-size: 18px; }
+.card p { margin: 0; color: var(--muted); font-size: 15.5px; }
+.dot { display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; background: var(--accent); }
+ol.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+ol.steps li { padding: 24px; background: var(--accent-soft); border-radius: 18px; counter-increment: step; }
+ol.steps li::before { content: counter(step); display: grid; place-items: center; width: 32px; height: 32px; margin-bottom: 12px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-weight: 700; }
+pre { overflow-x: auto; margin: 28px 0 0; padding: 18px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; font: 14px/1.6 var(--mono); }
+footer { padding: 36px 0 56px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+@media (max-width: 860px) {
+  .hero, .grid, ol.steps { grid-template-columns: 1fr; }
+  .hero { gap: 36px; padding-top: 24px; }
+  nav a:not(:last-child) { display: none; }
+}
+</style>
+</head>
+<body>
+<header class="wrap">
+  <picture>
+    <source srcset="assets/oppa-lockup-dark.svg" media="(prefers-color-scheme: dark)">
+    <img src="assets/oppa-lockup-light.svg" alt="OPPA">
+  </picture>
+  <nav><a href="#what">What it does</a><a href="#start">Get started</a><a href="https://github.com/roywei/oppa">GitHub</a></nav>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div>
+      <div class="eyebrow">Open Personal Assistant</div>
+      <h1>Your assistant.<br><span>Your way.</span></h1>
+      <p class="lede">OPPA is a self-hosted assistant for you and your household. It runs on your Mac with your Claude Code or Codex subscription and keeps your memory in a private Git repository you own. It is under active construction.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/roywei/oppa#set-up">Set it up</a>
+        <a class="btn" href="https://github.com/roywei/oppa">Read the code</a>
+      </div>
+    </div>
+    <div class="chat" aria-label="Example conversation">
+      <div class="chat-head"><img src="assets/oppa-icon.svg" alt=""> OPPA <small>From a demo household with made-up data</small></div>
+      <p class="msg in">Hi! What is coming up for the kids this week?</p>
+      <div class="msg out">Here's the kids' week, from the school schedule in my notes:
+        <ul>
+          <li><b>Thursday, Oct 15:</b> Leo's permission slip for the pumpkin farm trip is due, with $8.</li>
+          <li><b>Friday, Oct 16:</b> Picture day. Mia wants to wear the blue sweater.</li>
+        </ul>
+        Would you like a reminder on Wednesday evening about the permission slip?</div>
+      <p class="msg in">Remind me Wednesday at 7pm to sign Leo's field trip slip.</p>
+      <p class="msg out">Your reminder is set for Wednesday, Oct 14 at 7:00 pm. It's due Thursday and needs $8.</p>
+    </div>
+  </div>
+
+  <section id="what">
+    <div class="wrap">
+      <h2>One conversation, wherever you are.</h2>
+      <p class="section-lede">Talk to it in web chat or by iMessage. The people you register can too, each with their own role.</p>
+      <div class="grid">
+        <div class="card"><h3><span class="dot"></span>Memory you own</h3><p>Notes are Markdown in a private Git repository. Public knowledge goes in a separate wiki.</p></div>
+        <div class="card"><h3><span class="dot"></span>Made for a household</h3><p>Partners, children and grandparents each get a role, in direct chats and in family groups.</p></div>
+        <div class="card"><h3><span class="dot"></span>Reminders and routines</h3><p>Reminders, daily briefings and background tasks. Once something is connected, it checks in twice a day.</p></div>
+        <div class="card"><h3><span class="dot"></span>Your harness</h3><p>Your turns use the accounts, MCP servers and plugins you connected to Claude Code or Codex. You choose how far it may act.</p></div>
+        <div class="card"><h3><span class="dot"></span>Grows by building</h3><p>Ask for something new, like your lights or your car, and it writes a script and a skill, then reuses them.</p></div>
+        <div class="card"><h3><span class="dot"></span>On your own Mac</h3><p>No API keys of its own and no copied credentials. It uses your CLI's existing sign-in.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="start">
+    <div class="wrap">
+      <h2>Set up in one conversation.</h2>
+      <p class="section-lede">Open the checkout in Claude Code or Codex and ask it to set up OPPA. The agent does the rest.</p>
+      <ol class="steps">
+        <li>The agent checks prerequisites, builds OPPA, creates your instance and installs the service.</li>
+        <li>You answer a few questions, such as which connections you want and your phone number, grant Full Disk Access to one file and click Allow on the macOS dialogs.</li>
+        <li>You send the assistant one text from your phone. It answers.</li>
+      </ol>
+      <pre>git clone https://github.com/roywei/oppa &amp;&amp; cd oppa
+claude "/setup-oppa"</pre>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap"><span>OPPA · Open Personal Assistant · Apache-2.0</span><a href="https://github.com/roywei/oppa">github.com/roywei/oppa</a></div>
+</footer>
+</body>
+</html>

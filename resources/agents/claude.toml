@@ -1,0 +1,4 @@
+id = "claude"
+family = "anthropic"
+command = ["python3", "resources/adapters/claude.py"]
+timeout_seconds = 120

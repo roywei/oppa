@@ -1,0 +1,629 @@
+#!/usr/bin/env python3
+"""Replay recorded conversations on disposable instances and grade the replies (E-1, E-5).
+
+  oppa-replay draft --conversation ID --at SEQ --out FILE   a case from the instance in OPPA_HOME, read-only,
+                                                            for a message the owner sent through a channel
+  oppa-replay run CASE.json... --out DIR
+
+A case is one JSON file:
+
+  {"id": "late-reply", "requirements": ["B-1", "B-6"], "owner": "owner", "kind": "dm", "title": null,
+   "people": [{"id": "sam", "role": "adult"}],
+   "history": [{"author": "owner", "body": "..."}, {"author": "assistant", "body": "...", "delivery": "sent"}],
+   "message": "the owner's message to replay",
+   "truth": "what the person said or wanted next; their correction is the truth",
+   "expect": {"silent": false, "includes": ["..."], "excludes": ["..."], "retrieves": ["..."]}}
+
+The case's id names its result files: lowercase letters, digits, - and _. The owner's and people's ids are
+as config.toml has them; a history author may also be a sender the host never identified, stored as
+`<channel id>:<handle>`, who stays unregistered in the replay as in the original. An assistant message's
+`delivery` is its outbox state when the owner's message arrived (queued, unknown or sent; null for none),
+sent when omitted; another author's message sent from their own device carries "direction": "out". Draft
+keeps each event's author, direction and body, not its kind, attachments, reply-to link or device, so a
+schedule, a task result or a photo replays as a plain text message.
+`expect` holds the assertions a case can make; a separate judge model grades the rest against the truth.
+Every completed turn must say something or choose silence with NO_REPLY: empty output fails. A case naming
+B-2 lists in `retrieves` what only a lookup can find, and B-2 fails unless a successful history or memory
+tool result in the turn's Claude session record holds each of them; when the turn's recorded prompt already
+held one, or no prompt was recorded, the case cannot show retrieval and B-2 is ungraded. Before any case,
+a preflight on an instance of its own proves the harness reaches the broker from its sandbox. Each case
+gets its own instance under the system temp directory, seeded with the history, at `read` access, and the
+message arrives through `oppa serve` and a synthetic channel, answered by Claude. Every process the case
+started is stopped, then the instance's evidence, attempt records and Claude session records are copied to
+the results folder, and only then are the instance and its session records removed; a copy that fails
+leaves them where they are and says so. Cases and results hold private conversation text: keep them in the
+instance's private `evals/` folder or the private home, never in this repository. The results folder must
+be new or empty, so no run overwrites another's. Stdout carries each requirement's grade as the report
+counts it, counts, timing and the requested model settings only. A case whose setup fails is recorded
+ungraded and the run goes on to the next. Exit codes: 0 every requirement of every case passed, 1 one
+failed (whatever else happened), 2 usage, build or setup error, a turn that did not complete, or a
+requirement left ungraded or not shown.
+"""
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+# A spec with a location gives the helper its __file__; spec_from_loader gives none from Python 3.14 on.
+_path = str(Path(__file__).with_name("oppa-verify"))
+_spec = importlib.util.spec_from_file_location("oppa_verify", _path,
+                                               loader=importlib.machinery.SourceFileLoader("oppa_verify", _path))
+verify = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(verify)
+
+ASSISTANT = "assistant"
+CONVERSATION = "replay/acct/case"
+ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")  # a case's, which names its result files
+PERSON = re.compile(r"[A-Za-z0-9_-]+")  # the owner's or a person's, as config.toml allows it
+ROLES = ("adult", "child", "friend", "guest", "agent")
+GRADES = ("pass", "fail", "not shown")
+DELIVERY = ("queued", "unknown", "sent", None)  # serve turns a stored "sending" into "unknown" as it starts
+EXPECT = {"silent": bool, "includes": list, "excludes": list, "retrieves": list}
+LOOKUPS = ("mcp__oppa__history_", "mcp__oppa__memory_")
+STARTUP = 120  # seconds serve has to start the replayed message's turn
+# What the Claude adapter asks for at read access without vendor connectors (resources/adapters/claude.py);
+# the models the turn's session record shows answered are kept beside it as retrieval's "models".
+REQUESTED = {"requested_model": "harness default", "effort": "medium"}
+JUDGE_MODEL = "claude-opus-5-5"
+# No tools, no saved session and none of the user's settings or instructions: the judge sees only the
+# prompt, and keeps nothing.
+JUDGE = ["claude", "-p", "--model", JUDGE_MODEL, "--tools", "", "--strict-mcp-config", "--setting-sources", "",
+         "--no-session-persistence", "--output-format", "json"]
+JUDGE_SECONDS = 600
+
+
+def requirements() -> dict:
+    """The behavior requirements' own words, from the ledger, so the judge grades what the ledger says."""
+    rows = re.findall(r"^\| (B-\d+) \| P\d \| (.+?) \|", (verify.REPO / ".agents" / "skills" / "verify-oppa" / "requirements.md").read_text(),
+                      re.MULTILINE)
+    return dict(rows)
+
+
+def load_case(path: Path) -> dict:
+    """A case whose every field has the shape the runner reads; anything else is a ValueError."""
+    case = json.loads(path.read_text())
+
+    def need(ok, problem: str):
+        if not ok:
+            raise ValueError(f"{path.name}: {problem}")
+
+    need(isinstance(case, dict), "a case is a JSON object")
+    for field in ("id", "requirements", "history", "message", "truth"):
+        need(field in case, f"missing {field}")
+    need(isinstance(case["id"], str) and ID.fullmatch(case["id"]),
+         "a case id is lowercase letters, digits, - and _, since it names the result files")
+    people = case.get("people", [])
+    need(isinstance(people, list) and all(isinstance(p, dict) for p in people), "people must be a list of objects")
+    owner = case.get("owner", "owner")
+    ids = [owner, *(p.get("id") for p in people)]
+    need(all(isinstance(i, str) and PERSON.fullmatch(i) for i in ids),
+         "owner and people ids are letters, digits, - and _, as in config.toml")
+    known = requirements()
+    asked = case["requirements"]
+    need(isinstance(asked, list) and asked and all(isinstance(r, str) and r in known for r in asked),
+         "requirements must name B rows of the verify skill's requirements.md")
+    need(case.get("kind", "dm") in ("dm", "group"), "kind must be dm or group")
+    need(isinstance(case.get("title"), (str, type(None))), "title must be text or null")
+    need(len(set(ids)) == len(ids) and ASSISTANT not in ids, "people ids are unique and neither the owner's "
+         "nor the assistant's")
+    need(all(p.get("role") in ROLES for p in people), f"each person needs a role: {', '.join(ROLES)}")
+    need(isinstance(case["message"], str) and case["message"].strip(), "message must be text")
+    need(isinstance(case["truth"], str), "truth must be text")
+    history = case["history"]
+    need(isinstance(history, list) and all(isinstance(e, dict) for e in history), "history must be a list of objects")
+    authors = {p["id"] for p in people} | {owner, ASSISTANT}
+    for n, event in enumerate(history, start=1):
+        need(isinstance(event.get("author"), str) and isinstance(event.get("body"), str),
+             "each history message needs a text author and body")
+        need(event["author"] in authors or unidentified(event["author"]), f"history message {n}'s author is not "
+             "the owner, the assistant, one of the case's people or an unidentified <channel>:<handle>")
+        if event["author"] == ASSISTANT:
+            need(event.get("delivery", "sent") in DELIVERY and "direction" not in event,
+                 f"an assistant message's delivery is one of {', '.join(map(str, DELIVERY))}")
+        else:
+            need(event.get("direction", "in") in ("in", "out") and "delivery" not in event,
+                 "only the assistant's messages have a delivery, and direction is in or out")
+    expect = case.get("expect", {})
+    need(isinstance(expect, dict) and set(expect) <= set(EXPECT)
+         and all(isinstance(expect[k], EXPECT[k]) for k in expect)
+         and all(isinstance(t, str) and t for k in ("includes", "excludes", "retrieves") for t in expect.get(k, [])),
+         "expect may hold silent (true or false), includes, excludes and retrieves (lists of text)")
+    need("B-2" not in asked or expect.get("retrieves"), "a case naming B-2 lists what the turn retrieves")
+    need(not any(t in case["message"] for t in expect.get("retrieves", [])),
+         "what the turn retrieves must not be in the message itself")
+    return case
+
+
+def unidentified(author: str) -> bool:
+    """A sender the host did not identify, whom the store keeps as `<channel id>:<handle>` (src/channel.rs);
+    no person id has a colon, and the replay registers no one for them, as the original turn knew no one."""
+    channel, colon, handle = author.partition(":")
+    return bool(colon and PERSON.fullmatch(channel) and handle.strip())
+
+
+def seed(inst, case: dict):
+    """Write the case's history into the fresh instance's store as the synthetic channel's conversation,
+    a minute apart and ending a minute ago, each assistant message in its recorded delivery state."""
+    start = datetime.now(timezone.utc) - timedelta(minutes=len(case["history"]) + 1)
+    db = sqlite3.connect(inst.root / "runtime" / "state.db")
+    with db:
+        db.execute("INSERT INTO conversations(id,channel,account,native_id,policy_hash,kind,title) "
+                   "VALUES(?,'replay','acct','case','seeded',?,?)",
+                   (CONVERSATION, case.get("kind", "dm"), case.get("title")))
+        for i, event in enumerate(case["history"]):
+            at = (start + timedelta(minutes=i)).isoformat()
+            mine = event["author"] == ASSISTANT
+            out = mine or event.get("direction") == "out"
+            seq = db.execute(
+                "INSERT INTO events(conversation,created_at,direction,author,kind,body,attachments,native_id,"
+                "payload_digest) VALUES(?,?,?,?,'message',?,'[]',?,'seeded')",
+                (CONVERSATION, at, "out" if out else "in", event["author"], event["body"],
+                 None if mine else f"seed-{i}")).lastrowid
+            state = event.get("delivery", "sent") if mine else None
+            if state:  # a seed- key is never a queued send, so serve's dispatcher leaves it as it is
+                db.execute("INSERT INTO outbox(event_seq,idempotency_key,state,native_id,evidence,updated_at) "
+                           "VALUES(?,?,?,?,'seeded replay history',?)",
+                           (seq, f"seed-{i}", state, f"seed-{i}" if state == "sent" else None, at))
+    db.close()
+
+
+def use_harness(inst, harness):
+    """A stand-in harness for tests, in place of the installed one."""
+    if harness is not None:
+        config = inst.root / "private" / "config.toml"
+        line = "command = " + json.dumps(harness)
+        config.write_text(re.sub(r"^command = \[[^\]]*\]", lambda _: line, config.read_text(), count=1,
+                                 flags=re.MULTILINE))
+
+
+def configure(inst, case: dict, harness):
+    use_harness(inst, harness)
+    config = inst.root / "private" / "config.toml"
+    text = config.read_text()
+    (inst.root / "synthetic-channel.py").write_text(verify.SYNTHETIC_CHANNEL)
+    text += (f'\n[[channels]]\nid = "replay"\naccount = "acct"\ncommand = ["python3", '
+             f'"{inst.root / "synthetic-channel.py"}", "{inst.root / "channel"}"]\n'
+             f'\n[[people]]\nid = "{case.get("owner", "owner")}"\nrole = "owner"\nhandles = ["replay:+15550001"]\n')
+    for n, person in enumerate(case.get("people", []), start=2):
+        text += f'\n[[people]]\nid = "{person["id"]}"\nrole = "{person["role"]}"\nhandles = ["replay:+1555{n:07}"]\n'
+    config.write_text(text)
+
+
+def replay(inst, case: dict, seconds: int) -> dict:
+    """Deliver the case's message through serve and return what the turn did once it settled. The time
+    limit counts from the turn's start; serve has STARTUP seconds to start it."""
+    log = open(inst.root / "serve.log", "w")
+    serve = subprocess.Popen([str(verify.BIN), "serve"], env=inst.env, stdout=log, stderr=subprocess.STDOUT,
+                             start_new_session=True)
+    inst.state.setdefault("pids", []).append(serve.pid)
+    inst.save()
+    try:
+        inbox = inst.root / "channel" / "inbox"
+        inbox.mkdir(parents=True, exist_ok=True)
+        value = {"conversation": {"native_id": "case", "kind": case.get("kind", "dm"), "title": case.get("title")},
+                 "native_id": "replayed", "sender": {"handle": "+15550001"}, "body": case["message"]}
+        (inbox / "replayed.tmp").write_text(json.dumps(value))
+        (inbox / "replayed.tmp").rename(inbox / "replayed.json")
+        deadline = time.time() + STARTUP
+        state = seq = None
+        while time.time() < deadline and serve.poll() is None:
+            seq = input_seq(inst)
+            started = state
+            state = verify.turn_state(inst, seq) if seq else None
+            if state not in (None, "started"):
+                break
+            if state == "started" and started is None:
+                deadline = time.time() + seconds
+            time.sleep(0.5)
+        sent = inst.root / "channel" / "sent.jsonl"
+        sends = [json.loads(line) for line in (sent.read_text().splitlines() if sent.exists() else [])]
+        runs = verify.attempts(inst, seq) if seq else []
+        last = runs[-1] if runs else {}
+        transcript = verify.session_transcript(inst, (last.get("outcome") or {}).get("session"))
+        return {"turn": state, "reply": "\n".join(s["body"] for s in sends if s["conversation"] == "case"),
+                "no_reply": bool(seq) and verify.chose_silence(inst, seq),
+                "agent": last.get("agent"), "attempts": len(runs), "session": (last.get("outcome") or {}).get("session"),
+                "retrieval": {"read_calls": (last.get("broker") or {}).get("read_calls", 0),
+                              **lookups(transcript, case.get("expect", {}).get("retrieves", []))}}
+    finally:
+        # Serve, the harness and any connector share serve's session: all of them are gone before the
+        # caller removes the instance and its session records.
+        verify.stop_session(serve)
+        log.close()
+
+
+def lookups(transcript: list, wanted: list) -> dict:
+    """What the turn's Claude session record shows it called, with each call's arguments; for each text the
+    case says only a lookup finds, whether a successful history or memory result held it; and whether the
+    prompt the turn was given, as recorded, held none of them, so that only a lookup could find them."""
+    calls, found, prompts, models = {}, dict.fromkeys(wanted, False), [], set()
+    for event in transcript:
+        message = event.get("message") or {}
+        content = message.get("content")
+        if message.get("role") == "assistant" and message.get("model"):
+            models.add(str(message["model"]))
+        if message.get("role") == "user" and isinstance(content, str):
+            prompts.append(content)
+        for item in content if isinstance(content, list) else []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "text" and message.get("role") == "user":
+                prompts.append(str(item.get("text", "")))
+            elif item.get("type") == "tool_use":
+                arguments = {k: v for k, v in (item.get("input") or {}).items() if k != "context"}
+                calls[item.get("id")] = {"tool": str(item.get("name", "")), "input": arguments, "succeeded": False}
+            elif item.get("type") == "tool_result" and item.get("tool_use_id") in calls:
+                call = calls[item["tool_use_id"]]
+                call["succeeded"] = item.get("is_error") is not True
+                result = item.get("content")
+                texts = [result] if isinstance(result, str) else [
+                    part.get("text", "") for part in result or [] if isinstance(part, dict)]
+                if call["succeeded"] and call["tool"].startswith(LOOKUPS):
+                    found.update({w: True for w in wanted if any(holds(t, w) for t in texts)})
+    return {"lookups": list(calls.values()), "found": found, "models": sorted(models), "prompt_recorded": bool(prompts),
+            "hidden": {w: bool(prompts) and not any(holds(t, w) for t in prompts) for w in wanted}}
+
+
+def holds(text: str, wanted: str) -> bool:
+    """Whether text holds wanted as written or as JSON escapes it: serde_json, which writes the prompt and
+    the broker's results, keeps other characters as they are, and Python's default escapes them too."""
+    return any(form in text for form in (wanted, json.dumps(wanted, ensure_ascii=False)[1:-1],
+                                         json.dumps(wanted)[1:-1]))
+
+
+def input_seq(inst):
+    # Not opened read-only: that fails on a WAL store before serve has opened it.
+    db = sqlite3.connect(inst.root / "runtime" / "state.db", timeout=5)
+    try:
+        row = db.execute("SELECT seq FROM events WHERE conversation=? AND direction='in' AND native_id='replayed'",
+                         (CONVERSATION,)).fetchone()
+    finally:
+        db.close()
+    return row[0] if row else None
+
+
+def assertions(case: dict, outcome: dict) -> dict:
+    """The case's own checks, each 1 or 0. A silent reply counts only on the model's explicit NO_REPLY, and
+    empty output, which the runtime also completes silent, always fails."""
+    expect, reply = case.get("expect", {}), outcome["reply"].lower()
+    checks = {"not_empty": int(outcome["no_reply"] or bool(reply.strip()))}
+    if "silent" in expect:
+        checks["silent" if expect["silent"] else "replied"] = int(
+            (outcome["no_reply"] and not reply) if expect["silent"] else bool(reply.strip()))
+    for n, text in enumerate(expect.get("includes", [])):
+        checks[f"includes_{n}"] = int(text.lower() in reply)
+    for n, text in enumerate(expect.get("excludes", [])):
+        checks[f"excludes_{n}"] = int(text.lower() not in reply)
+    return checks
+
+
+def judge_prompt(case: dict, outcome: dict) -> str:
+    texts = requirements()
+    asked = {r: texts[r] for r in case["requirements"]}
+    reply = "(no reply: the assistant chose silence)" if outcome["no_reply"] else outcome["reply"] or "(nothing)"
+    return (
+        "You grade a personal assistant's reply in a recorded conversation that was replayed. The person's own "
+        "later words or correction are the truth about what a good reply needed. Grade only the requirements "
+        "listed, each as \"pass\", \"fail\" or \"not shown\" (the exchange does not exercise it), with one "
+        "sentence why. The lookups are what the assistant read through its tools during the turn. Answer "
+        "with only a JSON object mapping each requirement id to {\"grade\": ..., \"why\": ...}.\n\n"
+        f"<requirements>\n{json.dumps(asked, indent=1, ensure_ascii=False)}\n</requirements>\n"
+        f"<people>\n{case.get('owner', 'owner')}: owner\n"
+        + "".join(f"{p['id']}: {p['role']}\n" for p in case.get("people", [])) + "</people>\n"
+        f"<conversation kind=\"{case.get('kind', 'dm')}\" owner=\"{case.get('owner', 'owner')}\">\n"
+        + "".join(f"{e['author']}{direction_note(e)}: {e['body']}{delivery_note(e)}\n" for e in case["history"])
+        + f"</conversation>\n<message author=\"{case.get('owner', 'owner')}\">\n{case['message']}\n</message>\n"
+        f"<lookups read_calls=\"{outcome['retrieval']['read_calls']}\">\n"
+        + ("".join(f"{c['tool']} {json.dumps(c['input'], ensure_ascii=False)}"
+                   f"{'' if c['succeeded'] else ' (failed)'}\n" for c in outcome["retrieval"]["lookups"])
+           or "(no tool record)\n") + "</lookups>\n"
+        f"<reply>\n{reply}\n</reply>\n<truth>\n{case['truth']}\n</truth>\n")
+
+
+def direction_note(event: dict) -> str:
+    """A person's message the assistant did not receive from them but saw sent from their own device."""
+    return " (sent from their own device)" if event.get("direction") == "out" else ""
+
+
+def delivery_note(event: dict) -> str:
+    """What the model saw of an assistant message that was not delivered."""
+    if event["author"] != ASSISTANT or event.get("delivery", "sent") == "sent":
+        return ""
+    return f" [never confirmed delivered: {event['delivery'] or 'no delivery'}]"
+
+
+def judge(command: list, case: dict, outcome: dict) -> dict:
+    """A separate model's grades for the case's requirements. A judge that cannot run, fails, runs out of
+    time or answers anything but a grade for each leaves them ungraded, never failed, and what it said is
+    kept with the result, so a failed verdict is diagnosed without calling the judge again."""
+    prompt, started, said, failure = judge_prompt(case, outcome), time.monotonic(), {}, None
+    try:
+        out = subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=JUDGE_SECONDS,
+                             cwd=tempfile.gettempdir())
+        said = {"exit_code": out.returncode, "stdout": out.stdout, "stderr": out.stderr}
+        if out.returncode != 0:
+            raise ValueError(f"the judge exited {out.returncode}")
+        grades, model = verdict(command, case, out.stdout)
+    except Exception as exc:  # the judge's output is data: any shape of it that is no verdict is ungraded
+        if isinstance(exc, subprocess.TimeoutExpired):  # stopped; what it wrote by then arrives as bytes
+            said = {k: v.decode(errors="replace") if isinstance(v, bytes) else v
+                    for k, v in (("stdout", exc.stdout), ("stderr", exc.stderr))}
+        grades, model = {r: {"grade": "ungraded", "why": "the judge gave no usable verdict"}
+                         for r in case["requirements"]}, None
+        failure = {"problem": repr(exc), "exit_code": None, "stdout": None, "stderr": None, **said}
+    return {"grades": grades, "judge": command[0], "judge_model": model, "judge_failure": failure,
+            "judge_elapsed_ms": round((time.monotonic() - started) * 1000)}
+
+
+def verdict(command: list, case: dict, stdout: str):
+    """A grade for each requirement the case names and the model that gave them, from the CLI's own output."""
+    text, model = stdout, "stand-in"
+    if command[:2] == ["claude", "-p"]:
+        answer = json.loads(stdout)
+        if answer.get("is_error"):
+            raise ValueError("the judge reported an error")
+        text, model = str(answer.get("result", "")), sorted(answer.get("modelUsage") or {})
+    found = json.loads(text[text.index("{"):text.rindex("}") + 1])
+    grades = {r: {"grade": str(found[r]["grade"]).lower(), "why": str(found[r].get("why", ""))}
+              for r in case["requirements"]}
+    if not all(g["grade"] in GRADES for g in grades.values()):
+        raise ValueError("a grade is none of " + ", ".join(GRADES))
+    return grades, model
+
+
+@contextmanager
+def disposable(out: Path, name: str):
+    """A fresh instance under the system temp directory. Its evidence goes to out/<name>.evidence, and only
+    once all of it is there are the instance and its Claude session records removed. A setup failure
+    points to the kept evidence."""
+    root = Path(tempfile.mkdtemp(prefix="oppa-verify.replay-"))
+    inst = verify.Instance(root)
+    inst.state = {"agent": "claude", "pids": []}
+    inst.save()
+    kept = out / f"{name}.evidence"
+    try:
+        yield inst
+    except AssertionError as exc:
+        raise AssertionError(str(exc).replace(str(root / "evidence"), str(kept))) from None
+    finally:
+        keep(inst, kept)  # when this raises, nothing below runs and the originals stay
+        verify.purge_harness_transcripts(inst)
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def keep(inst, kept: Path):
+    """Copy each `oppa` command's output, serve's log, the attempt records and the Claude session records of
+    the turns, whose tool results the grades rest on, so every grade can be checked again after the instance
+    is gone. A copy that fails says where the originals stay."""
+    sources = {"serve.log": inst.root / "serve.log", "runs": inst.root / "runtime" / "runs",
+               **{f"claude-{n}": verify.claude_projects(inst, n) for n in ("harness", "harness-restricted")}}
+    try:
+        if (inst.root / "evidence").is_dir():
+            shutil.copytree(inst.root / "evidence", kept)
+        for name, path in sources.items():
+            if path.is_file():
+                kept.mkdir(exist_ok=True)
+                shutil.copy(path, kept / name)
+            elif path.is_dir():
+                shutil.copytree(path, kept / name)
+    except Exception as exc:
+        stay = [inst.root, *(p for n, p in sources.items() if n.startswith("claude-") and p.is_dir())]
+        raise RuntimeError(f"the evidence could not be kept in {kept} ({exc!r}); the originals stay in "
+                           + ", ".join(map(str, stay))) from exc
+
+
+def preflight(out: Path, harness=None):
+    """Prove once, on an instance of its own, that the harness reaches the broker from its sandbox, so a
+    fault there is a setup error, never a model's failure; no case's instance holds the preflight note."""
+    with disposable(out, "_preflight") as inst:
+        inst.run("replay", "init", "init", "--agent", "claude", "--access", "read")
+        use_harness(inst, harness)
+        verify.preflight(inst, "replay")
+
+
+def run_case(case: dict, out: Path, judge_command: list, harness=None, seconds: int = 300) -> dict:
+    """One case on its own disposable instance; the result, with the reply, goes to out/<id>.json."""
+    if any(out.glob(f"{case['id']}.*")):
+        raise FileExistsError(f"{out} already holds results for {case['id']}")
+    started = time.monotonic()
+    with disposable(out, case["id"]) as inst:
+        inst.run("replay", "init", "init", "--agent", "claude", "--owner", case.get("owner", "owner"),
+                 "--access", "read")
+        configure(inst, case, harness)
+        seed(inst, case)
+        outcome = replay(inst, case, seconds)
+    if outcome["turn"] == "completed":
+        graded = {"assertions": assertions(case, outcome), **judge(judge_command, case, outcome)}
+        retrieval = outcome["retrieval"]
+        if "B-2" in graded["grades"] and not all(retrieval["hidden"].values()):
+            graded["grades"]["B-2"] = {"grade": "ungraded", "why": (
+                "the turn's prompt already held what the case retrieves, so it cannot show a lookup was needed"
+                if retrieval["prompt_recorded"] else "no session record holds the turn's prompt")}
+        elif "B-2" in graded["grades"] and not all(retrieval["found"].values()):
+            graded["grades"]["B-2"] = {"grade": "fail",
+                                       "why": "no history or memory lookup returned what the case retrieves"}
+    else:  # a fault in serve, the harness or the model's reach grades nothing, and the judge is not asked
+        graded = {"assertions": {}, "grades": {r: {"grade": "ungraded", "why": f"the turn ended {outcome['turn']}"}
+                                              for r in case["requirements"]}, "judge": None, "judge_model": None}
+    result = {"case": case["id"], "requirements": case["requirements"], "agent": outcome["agent"], **REQUESTED,
+              "access": "read", **outcome, **graded, "evidence": f"{case['id']}.evidence",
+              "elapsed_ms": round((time.monotonic() - started) * 1000)}
+    (out / f"{case['id']}.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
+    return result
+
+
+def passed(result: dict, requirement: str) -> str:
+    """A requirement's grade in one case: a failed assertion fails every requirement the case names."""
+    if not all(result["assertions"].values()):
+        return "fail"
+    return result["grades"][requirement]["grade"]
+
+
+def exit_code(results: list) -> int:
+    """0 only when every requirement of every case passed; a requirement no case showed is not a pass."""
+    grades = {passed(r, q) for r in results for q in r["requirements"]}
+    return 1 if "fail" in grades else 0 if grades == {"pass"} else 2
+
+
+def report(results: list, out: Path) -> Path:
+    """One row per behavior requirement from B-1 to B-10, with its cases' grades and their result files."""
+    texts = requirements()
+    lines = ["# Replay grades", "", f"Graded {datetime.now(timezone.utc).isoformat(timespec='seconds')}; "
+             f"{len(results)} case(s). Each case's reply, assertions and the judge's reasons are in its JSON file. "
+             "A row passes when a case passed it and none failed or left it ungraded; the run passes only when "
+             "every case passed every requirement it names.",
+             "", "| Requirement | Grade | Cases | Evidence |", "| --- | --- | --- | --- |"]
+    for n in range(1, 11):
+        requirement = f"B-{n}"
+        graded = [(r["case"], passed(r, requirement)) for r in results if requirement in r["requirements"]]
+        counts = {g: sum(1 for _, x in graded if x == g) for g in (*GRADES, "ungraded")}
+        overall = ("no case" if not graded else "fail" if counts["fail"] else "ungraded" if counts["ungraded"]
+                   else "pass" if counts["pass"] else "not shown")
+        title = re.sub(r"\*\*(.+?)\*\*.*", r"\1", texts.get(requirement, ""))
+        lines.append(f"| {requirement} {title} | {overall} | "
+                     + ", ".join(f"{k} {v}" for k, v in counts.items() if v) + " | "
+                     + ", ".join(f"{case}.json ({grade})" for case, grade in graded) + " |")
+    path = out / "report.md"
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def draft(conversation: str, at: int, out: Path, before: int) -> int:
+    """A case from a stored conversation of the instance in OPPA_HOME. The store is opened read-only by
+    SQLite itself, never by `oppa`, which would migrate it. The owner names its requirements and writes its
+    truth; the owner's next messages are only a start."""
+    home = Path(os.environ.get("OPPA_HOME") or Path.home() / ".oppa")
+    private = Path(os.environ.get("OPPA_PRIVATE_DIR") or f"{home}-private")
+    owner = re.search(r'^owner = "([^"]+)"$', (private / "config.toml").read_text(), re.MULTILINE).group(1)
+    # The store is in WAL mode, which keeps a -wal file while anyone has it open. With none, as after serve
+    # stops, the main file holds every committed write, and the system SQLite cannot open it read-only
+    # without creating that file: it is read as immutable instead.
+    store = (home / "state.db").resolve()
+    closed = "" if store.with_name(store.name + "-wal").exists() else "&immutable=1"
+    db = sqlite3.connect(f"{store.as_uri()}?mode=ro{closed}", uri=True)
+    try:
+        shape = db.execute("SELECT kind,title,channel FROM conversations WHERE id=?", (conversation,)).fetchone()
+        events = db.execute("SELECT e.seq,e.direction,e.author,e.body,o.state,o.updated_at,e.created_at,e.kind FROM "
+                            "events e LEFT JOIN outbox o ON o.event_seq=e.seq WHERE e.conversation=? ORDER BY e.seq",
+                            (conversation,)).fetchall()
+    finally:
+        db.close()
+
+    def said(event) -> bool:
+        """A message the owner sent: a schedule slot is the owner's too, but it carries another authority."""
+        return event[1] == "in" and event[2] == owner and event[7] == "message"
+
+    message = next((e for e in events if e[0] == at), None)
+    # A console turn, like a schedule slot, has an authority of its own (src/prompt.rs) that a replay through
+    # a channel would change.
+    if not shape or shape[2] == "console" or not message or not said(message):
+        raise SystemExit(f"event {at} is not a message the owner sent through a channel in {conversation}")
+    history = [{"author": author, "body": body, **({"delivery": then(state, updated, message[6])} if author == ASSISTANT
+                                                    else {"direction": "out"} if direction == "out" else {})}
+               for seq, direction, author, body, state, updated, _, _ in events if seq < at][-before:]
+    later = [e[3] for e in events if e[0] > at and said(e)]
+    people = sorted(a for a in {e["author"] for e in history} - {owner, ASSISTANT} if not unidentified(a))
+    case = {"id": f"case-{at}", "requirements": [], "owner": owner, "kind": shape[0], "title": shape[1],
+            "people": [{"id": p, "role": None} for p in people], "history": history, "message": message[3],
+            "truth": "\n".join(later[:3]), "expect": {}}
+    out.write_text(json.dumps(case, indent=2, ensure_ascii=False) + "\n")
+    print(f"drafted {out.name}: {len(history)} earlier message(s); name its requirements, people's roles and truth")
+    return 0
+
+
+def then(state, updated, arrived):
+    """An outgoing message's delivery state when the replayed message arrived, as the model saw it then: it
+    is stored before it is delivered, and only its latest state is kept. One confirmed sent later, or left
+    sending, was not yet confirmed then: unknown is the nearest state the store can say."""
+    if state == "sending" or (state == "sent" and instant(updated) > instant(arrived)):
+        return "unknown"
+    return state
+
+
+def instant(text: str) -> datetime:
+    """A stored RFC 3339 time; the store writes up to nanoseconds, which Python reads only to microseconds."""
+    match = re.fullmatch(r"(.+?:\d\d)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)", text)
+    zone = "+00:00" if match.group(3) == "Z" else match.group(3)
+    return datetime.fromisoformat(f"{match.group(1)}.{(match.group(2) or '0')[:6].ljust(6, '0')}{zone}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="oppa-replay")
+    sub = parser.add_subparsers(dest="command", required=True)
+    s = sub.add_parser("draft")
+    s.add_argument("--conversation", required=True)
+    s.add_argument("--at", type=int, required=True, help="sequence number of the owner's message to replay")
+    s.add_argument("--before", type=int, default=30, choices=range(1, 501), metavar="1-500",
+                   help="earlier messages to keep")
+    s.add_argument("--out", type=Path, required=True)
+    s = sub.add_parser("run")
+    s.add_argument("cases", type=Path, nargs="+")
+    s.add_argument("--out", type=Path, required=True)
+    a = parser.parse_args()
+    if a.command == "draft":
+        return draft(a.conversation, a.at, a.out, a.before)
+    if a.out.exists() and (not a.out.is_dir() or any(not p.name.startswith(".") for p in a.out.iterdir())):
+        print(f"{a.out} already holds results: give each run a new folder, so none is overwritten")
+        return 2
+    try:
+        cases = [load_case(path) for path in a.cases]
+    except (OSError, ValueError) as exc:
+        print(f"bad case: {exc}")
+        return 2
+    if len({c["id"] for c in cases}) != len(cases):
+        print("bad case: two cases share an id, and would share a result file")
+        return 2
+    try:
+        subprocess.run(["cargo", "build", "--locked", "--quiet"], cwd=verify.REPO, check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        print(f"build failed: {exc!r}")
+        return 2
+    a.out.mkdir(parents=True, exist_ok=True)
+    try:
+        preflight(a.out)
+    except Exception as exc:  # any fault here is the setup's, never a model's
+        print(f"preflight failed: {exc!r}")
+        return 2
+    return run_all(cases, a.out, JUDGE)
+
+
+def run_all(cases: list, out: Path, judge_command: list, harness=None) -> int:
+    """Every case in turn, each line of stdout one case's grades and counts, then the report. A case whose
+    setup fails is recorded ungraded and the rest still run, so an earlier failure keeps its exit code."""
+    results = []
+    for case in cases:
+        try:
+            result = run_case(case, out, judge_command, harness)
+        except Exception as exc:  # the instance could not be set up or stopped; the case was not graded
+            print(f"setup failed for {case['id']}: {exc!r}")
+            result = {"case": case["id"], "requirements": case["requirements"], "turn": None, "agent": None,
+                      **REQUESTED, "attempts": 0, "retrieval": {"read_calls": 0, "models": []}, "assertions": {},
+                      "judge_model": None, "setup_error": repr(exc), "evidence": f"{case['id']}.evidence",
+                      "grades": {r: {"grade": "ungraded", "why": "the case's setup failed"}
+                                 for r in case["requirements"]}, "elapsed_ms": None}
+            (out / f"{case['id']}.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
+        results.append(result)
+        print(json.dumps({"case": result["case"], "turn": result["turn"], "agent": result["agent"],
+                          "requested_model": result["requested_model"], "effort": result["effort"],
+                          "attempts": result["attempts"], "read_calls": result["retrieval"]["read_calls"],
+                          "models": result["retrieval"].get("models", []),
+                          "assertions": result["assertions"], "judge_model": result["judge_model"],
+                          "grades": {r: passed(result, r) for r in result["requirements"]},
+                          "elapsed_ms": result["elapsed_ms"]}))
+    print(f"report: {report(results, out)}")
+    return exit_code(results)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
