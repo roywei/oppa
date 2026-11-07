@@ -75,7 +75,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             message = {'type': 'message', 'channel': channel, 'channel_type': 'im' if channel.startswith('D') else 'channel',
                        'text': args['text'], 'ts': ts}
             if args.get('thread_ts'): message['thread_ts'] = args['thread_ts']
-            message.update({'user': 'U_BOT', 'bot_id': 'B_OPPA', 'app_id': 'A_OPPA'} if kind == 'bot' else {'user': 'U_OWNER'})
+            # As real Slack does, a post made with the app's user token still carries the app's bot id.
+            message.update({'user': 'U_BOT' if kind == 'bot' else 'U_OWNER', 'bot_id': 'B_OPPA', 'app_id': 'A_OPPA'})
             threads.setdefault(args.get('thread_ts') or ts, []).append(message)
             drop(message)
             if '<@U_GROK>' in args['text']:
@@ -538,12 +539,13 @@ async fn an_app_posting_as_the_owner_is_that_app_and_starts_no_turn() {
     server.await.unwrap().unwrap();
 }
 
-/// `ask` posts as the owner, labelled with the assistant's name, so an agent
-/// that answers only the owner answers it, and returns the agent's reply.
-/// Slack shows that post as the owner's own with nothing to mark the app; it
-/// is still the assistant's, never a turn.
+/// `ask` posts as the assistant's own app, labelled with its name, and returns
+/// the agent's reply once the agent's scheduled check finds it. Agents skip
+/// app posts even when they come with the owner's token (seen in the owner's
+/// workspace on 2026-11-07), so posting as the owner bought nothing; the post
+/// is the assistant's, never a turn.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn ask_posts_as_the_owner_returns_the_agents_reply_and_its_echo_is_the_assistants() {
+async fn ask_posts_as_the_app_returns_the_agents_reply_and_its_echo_is_the_assistants() {
     let fixture = Fixture::new(true);
     fixture.logged_in();
     let (server, stop) = fixture.start().await;
@@ -583,7 +585,7 @@ async fn ask_posts_as_the_owner_returns_the_agents_reply_and_its_echo_is_the_ass
         "Found 2 bookmarks about solar (https://x.example.test/a)"
     );
     let posts = sent(&fixture);
-    assert_eq!(posts[0]["token"], "user");
+    assert_eq!(posts[0]["token"], "bot");
     assert_eq!(posts[0]["args"]["channel"], "C_ROOM");
     assert_eq!(
         posts[0]["args"]["text"],
