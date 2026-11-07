@@ -202,6 +202,9 @@ class Adapter:
         self.chat_ids = {}
         self.tapbacks = self.typing_ok = False
         self.bridge_up = None
+        # Cleared while `imsg launch` restarts Messages.
+        self.quiet = threading.Event()
+        self.quiet.set()
         command = [options.imsg, "rpc"] + (["--db", options.db] if options.db else [])
         self.imsg = Imsg(command, self.notification, self.imsg_exited)
 
@@ -296,12 +299,15 @@ class Adapter:
         start; then read its state every half minute."""
         while not self.closing:
             if self.bridge_up is None and self.options.launch_bridge and self.first_launch_this_boot():
+                # Messages is down while it restarts, so sends wait for it.
+                self.quiet.clear()
                 try:
                     subprocess.run([self.options.imsg, "launch"], stdin=subprocess.DEVNULL,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
                 except (OSError, subprocess.SubprocessError):
                     pass
                 time.sleep(5)
+                self.quiet.set()
             try:
                 self.observe_bridge(self.imsg.call("status", timeout=10))
             except Exception:
@@ -323,8 +329,11 @@ class Adapter:
                     return False
         except OSError:
             pass
-        with open(marker, "w") as handle:
-            handle.write(boot)
+        try:
+            with open(marker, "w") as handle:
+                handle.write(boot)
+        except OSError:
+            return False
         return True
 
     def health(self, _params):
@@ -341,6 +350,8 @@ class Adapter:
         files = [a.get("path") for a in params.get("attachments") or [] if isinstance(a, dict) and a.get("path")]
         if not isinstance(chat, str) or not chat or (not body and not files):
             raise AdapterFailure(NOT_SENT, "nothing to send or no conversation")
+        if not self.quiet.wait(30):
+            raise AdapterFailure(NOT_SENT, "Messages is restarting with imsg's helper")
         with self.flow:
             self.sending[chat] += 1
         receipt, sent_any = None, False

@@ -345,7 +345,8 @@ time later when they ask.
    New installs have it; on an older one, add it, with the owner's yes. Then
    `~/.oppa/bin/oppa service stop` and `~/.oppa/bin/oppa service start`. If the
    helper is not running, the adapter restarts Messages with it, once per boot,
-   so it comes back by itself after a reboot.
+   so it comes back by itself after a reboot. If Messages is quit or restarts
+   later, tapbacks and typing stop until the next reboot.
 4. **Prove it.** `~/.oppa/channels/imsg-bridge/imsg status` must show
    "Advanced features ... Available - IMCore bridge connected" and bridge
    version v2. Then the owner texts the assistant something worth a reaction,
