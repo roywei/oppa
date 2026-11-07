@@ -27,7 +27,17 @@ use std::{
 pub trait Deliver {
     fn deliver(&mut self, entry: &OutboxEntry)
         -> impl Future<Output = Result<DeliveryObservation>>;
+
+    /// Show or clear "typing" while a reply is composed, where the channel can.
+    /// Best effort: it proves nothing and never fails a turn.
+    fn typing(&mut self, _on: bool) -> impl Future<Output = ()> {
+        async {}
+    }
 }
+
+/// How often the typing bubble is shown again while a turn runs, since
+/// Messages lets one lapse.
+const TYPING_REFRESH: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// The console and tests deliver text synchronously; a failed write is unknown
 /// because bytes may already have reached the terminal.
@@ -1066,7 +1076,23 @@ impl Runtime {
                         .is_dir()
                         .then(|| files.dir.to_string_lossy().into()),
                 };
-                let outcome = harness::run(agent, &request).await;
+                // Someone wrote, so the bubble shows while the turn composes; a
+                // schedule or heartbeat may end silent and shows none.
+                let typing = matches!(input.kind.as_str(), "message" | "edit");
+                let run = harness::run(agent, &request);
+                tokio::pin!(run);
+                let outcome = loop {
+                    if typing {
+                        deliver.typing(true).await;
+                    }
+                    tokio::select! {
+                        outcome = &mut run => break outcome,
+                        _ = tokio::time::sleep(TYPING_REFRESH) => {}
+                    }
+                };
+                if typing {
+                    deliver.typing(false).await;
+                }
                 drop(files);
                 // Before anything else can fail.
                 let forgot = self.settle_sessions(conversation)?;

@@ -65,8 +65,9 @@ for line in sys.stdin:
     request = json.loads(line)
     method, rid, params = request['method'], request.get('id'), request.get('params', {})
     if method in ('status', 'initialize'):
-        emit({'jsonrpc': '2.0', 'id': rid, 'result': {'version': '0.15.5', 'database': {'ready': True},
-              'methods': ['status', 'send', 'tapback', 'watch.subscribe', 'watch.unsubscribe', 'messages.history']}})
+        bridge = {} if (root / 'nobridge').exists() else {'ready': True, 'v2_ready': True, 'selectors': {'sendReaction': True, 'typing': True}}
+        emit({'jsonrpc': '2.0', 'id': rid, 'result': {'version': '0.15.5', 'database': {'ready': True}, 'bridge': bridge,
+              'methods': ['status', 'send', 'tapback', 'typing', 'chats.list', 'watch.subscribe', 'watch.unsubscribe', 'messages.history']}})
     elif method == 'messages.history':
         with lock:
             chat = [row for row in rows if row['chat_id'] == params['chat_id']]
@@ -94,8 +95,21 @@ for line in sys.stdin:
         echo = add({'chat_guid': params['chat_guid'], 'is_group': ';+;' in params['chat_guid'],
                     'sender': '', 'is_from_me': True, 'text': text})
         emit({'jsonrpc': '2.0', 'id': rid, 'result': {'ok': True} if 'NOGUID' in text else {'ok': True, 'id': echo['id'], 'guid': echo['guid']}})
+    elif method == 'chats.list':
+        with lock:
+            chats = {row['chat_guid']: row['chat_id'] for row in rows}
+        emit({'jsonrpc': '2.0', 'id': rid, 'result': {'chats': [{'id': i, 'guid': g, 'identifier': g} for g, i in chats.items()]}})
     elif method == 'tapback':
         with open(root / 'tapbacks.jsonl', 'a') as f: f.write(json.dumps(params) + '\n')
+        # Messages files a tapback as its own row; history lists it on its message.
+        with lock:
+            for row in rows:
+                if row['guid'] == params['message_guid'] and 'UNSEEN' not in row.get('text', ''):
+                    row.setdefault('reactions', []).append({'id': 9000 + len(row['reactions']), 'type': params['kind'], 'is_from_me': True})
+            rows_path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+        emit({'jsonrpc': '2.0', 'id': rid, 'result': {'ok': True}})
+    elif method == 'typing':
+        with open(root / 'typing.jsonl', 'a') as f: f.write(json.dumps(params) + '\n')
         emit({'jsonrpc': '2.0', 'id': rid, 'result': {'ok': True}})
     elif rid is not None:
         emit({'jsonrpc': '2.0', 'id': rid, 'error': {'code': -32601, 'message': 'unknown'}})
@@ -651,6 +665,7 @@ class Imsg:
             raise RuntimeError('database is locked')
         return {'messages': [r for r in rows if r['chat_id'] == params['chat_id']][:params['limit']]}
 adapter = imessage.Adapter.__new__(imessage.Adapter)
+adapter.chat_ids = {}
 adapter.flow, adapter.imsg, adapter.reread_error, out = threading.Condition(), Imsg(), None, []
 adapter.emit = out.append
 adapter.recent = {'G0': (2, 'row 0', time.monotonic(), 'iMessage;-;+15550001'),
@@ -705,6 +720,7 @@ class Imsg:
 class State:
     def advance(self, rowid): pass
 adapter = imessage.Adapter.__new__(imessage.Adapter)
+adapter.chat_ids = {}
 adapter.flow, adapter.imsg, adapter.state, adapter.reread_error, adapter.recent = threading.Condition(), Imsg(), State(), None, {}
 out = []
 adapter.emit = out.append
@@ -773,6 +789,7 @@ class Imsg:
         self.limits.append(params['limit'])
         return {'messages': [r for r in rows if r['chat_id'] == params['chat_id']][:params['limit']]}
 adapter = imessage.Adapter.__new__(imessage.Adapter)
+adapter.chat_ids = {}
 adapter.flow, adapter.imsg, adapter.reread_error, out = threading.Condition(), Imsg(), None, []
 adapter.emit = out.append
 now = time.monotonic()
@@ -842,8 +859,8 @@ fn a_group_message_names_its_members_and_a_direct_one_does_not() {
 }
 
 /// A harness that acts like a model given "Dinner at 7?": it likes the message
-/// through the broker, tries a reaction iMessage has no tapback for and one on
-/// an event that is not a message, then answers.
+/// through the broker, then tries a second reaction on it, one iMessage has no
+/// tapback for and one on an event that is not a message, and answers.
 const REACTOR: &str = r#"
 import json, subprocess, sys
 request = json.load(sys.stdin)
@@ -858,24 +875,27 @@ def rpc(method, params):
     return json.loads(mcp.stdout.readline())
 rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {}, 'clientInfo': {'name': 'reactor', 'version': '1'}})
 mcp.stdin.write(json.dumps({'jsonrpc': '2.0', 'method': 'notifications/initialized'}) + '\n'); mcp.stdin.flush()
-def react(seq, reaction, key):
+def react(seq, reaction):
     result = rpc('tools/call', {'name': 'messages.react', 'arguments': {'context': context['broker_context'],
-                 'event_seq': seq, 'reaction': reaction, 'idempotency_key': key}})['result']
-    return 'error' if result['isError'] else result['structuredContent']['delivery']['state']
+                 'event_seq': seq, 'reaction': reaction}})['result']
+    if result['isError']:
+        return 'error'
+    return result['structuredContent']['reaction'] + ':' + result['structuredContent']['delivery']['state']
 seq = context['trigger_event']['seq']
-outcomes = [react(seq, 'like', 'k1'), react(seq, 'fire', 'k2'), react(seq + 1000, 'love', 'k3')]
+outcomes = [react(seq, 'like'), react(seq, 'love'), react(seq, 'fire'), react(seq + 1000, 'love')]
 mcp.stdin.close(); mcp.wait(timeout=5)
 print(json.dumps({'type': 'activity', 'kind': 'effect'}))
 print(json.dumps({'type': 'answer', 'text': 'See you then. ' + ' '.join(outcomes)}))
 print(json.dumps({'type': 'completed'}))
 "#;
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_turn_likes_a_message_and_serve_sends_the_tapback_on_its_guid() {
-    // B-6: reactions are expression. The owner asked on 2026-11-07 for iMessage
-    // tapbacks; a model turn reacts through the broker, and serve hands the
-    // tapback to imsg on the message's own GUID once the turn ends.
-    let fixture = Fixture::new();
+/// Serve the fixture with the reactor as its model, whose broker is the real binary.
+async fn serve_reactor(
+    fixture: &Fixture,
+) -> (
+    tokio::task::JoinHandle<anyhow::Result<()>>,
+    oneshot::Sender<()>,
+) {
     let reactor = fixture.root.path().join("reactor.py");
     fs::write(&reactor, REACTOR).unwrap();
     let mut config = fixture.paths.load().unwrap();
@@ -896,41 +916,126 @@ async fn a_turn_likes_a_message_and_serve_sends_the_tapback_on_its_guid() {
     fixture
         .until("the watch subscription", |_| subscribed.exists())
         .await;
+    (server, stop)
+}
+
+fn lines(path: PathBuf) -> Vec<Value> {
+    fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_turn_likes_a_message_once_and_the_tapback_is_confirmed_by_reading_it_back() {
+    // B-6: reactions are expression. The owner asked on 2026-11-07 for iMessage
+    // tapbacks and the typing bubble, through imsg's bridge. A model turn reacts
+    // through the broker; the first reaction on a message is final; serve hands
+    // the tapback to imsg on the message's GUID once the turn ends, and it counts
+    // as sent only when history shows it on the message. The bubble shows while
+    // the turn runs and clears after.
+    let fixture = Fixture::new();
+    let (server, stop) = serve_reactor(&fixture).await;
     fixture.arrive("a", from(DM, OWNER, "Dinner at 7?"));
-    let tapbacks = fixture.root.path().join("messages/tapbacks.jsonl");
     fixture
-        .until("the tapback", |f| {
-            tapbacks.exists()
-                && f.transcript(DM)
-                    .iter()
-                    .any(|e| e.kind == "reaction" && e.delivery == Some(DeliveryState::Sent))
+        .until("the confirmed tapback", |f| {
+            f.transcript(DM)
+                .iter()
+                .any(|e| e.kind == "reaction" && e.delivery == Some(DeliveryState::Sent))
         })
         .await;
     settle().await;
-    let sent: Vec<Value> = fs::read_to_string(&tapbacks)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
     assert_eq!(
-        sent,
+        lines(fixture.root.path().join("messages/tapbacks.jsonl")),
         vec![json!({"chat_guid":DM,"message_guid":"G101","kind":"like"})]
     );
     let events = fixture.transcript(DM);
     let kinds: Vec<_> = events.iter().map(|e| e.kind.as_str()).collect();
     // Queued during the turn, so logged ahead of the reply it follows.
     assert_eq!(kinds, ["message", "reaction", "message"]);
-    assert_eq!(events[2].body, "See you then. queued error error");
+    assert_eq!(
+        events[2].body,
+        "See you then. like:queued like:queued error error"
+    );
     assert_eq!(events[1].body, "like");
     assert_eq!(
         events[1].reply_to.as_deref(),
         Some(&*events[0].seq.to_string())
     );
+    assert_eq!(events[1].native_id.as_deref(), Some("reaction:9000"));
+    let typing = lines(fixture.root.path().join("messages/typing.jsonl"));
     assert_eq!(
-        events[1].native_id.as_deref(),
-        Some("tapback:like:G101"),
-        "imsg named no reaction GUID, so the receipt is its answer"
+        (typing.first(), typing.last()),
+        (
+            Some(&json!({"chat_guid":DM,"typing":true})),
+            Some(&json!({"chat_guid":DM,"typing":false}))
+        )
     );
+    stop.send(()).unwrap();
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_tapback_never_seen_on_its_message_stays_unknown() {
+    // The 2026-09-15 audit of an earlier build found 7 of 13 reactions never
+    // confirmed: imsg taking a tapback is not proof that it landed.
+    let fixture = Fixture::new();
+    let (server, stop) = serve_reactor(&fixture).await;
+    fixture.arrive("a", from(DM, OWNER, "UNSEEN dinner at 7?"));
+    fixture
+        .until("the settled tapback", |f| {
+            f.transcript(DM)
+                .iter()
+                .any(|e| e.kind == "reaction" && e.delivery == Some(DeliveryState::Unknown))
+        })
+        .await;
+    assert_eq!(
+        lines(fixture.root.path().join("messages/tapbacks.jsonl")).len(),
+        1,
+        "an unknown tapback is never sent again"
+    );
+    stop.send(()).unwrap();
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn without_the_bridge_no_tapback_or_typing_is_attempted_and_text_still_works() {
+    // The bridge needs SIP off, which a new owner may decline: the channel then
+    // claims neither, refuses the reaction as not sent, and replies as before.
+    let fixture = Fixture::new();
+    fs::write(fixture.root.path().join("messages/nobridge"), b"").unwrap();
+    let (server, stop) = serve_reactor(&fixture).await;
+    fixture.arrive("a", from(DM, OWNER, "Dinner at 7?"));
+    fixture
+        .until("the refused tapback and the reply", |f| {
+            let events = f.transcript(DM);
+            events.len() == 3
+                && events
+                    .iter()
+                    .all(|e| e.kind != "reaction" || e.delivery == Some(DeliveryState::Queued))
+                && events.last().and_then(|e| e.delivery) == Some(DeliveryState::Sent)
+        })
+        .await;
+    settle().await;
+    let store = fixture.store();
+    let reaction = fixture
+        .transcript(DM)
+        .into_iter()
+        .find(|e| e.kind == "reaction")
+        .unwrap();
+    let entry = store
+        .outbox_by_key(&format!("send:react:{}", reaction.reply_to.unwrap()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(entry.attempts, 1);
+    assert_eq!(
+        entry.evidence.as_deref(),
+        Some("This channel does not take reactions.")
+    );
+    assert!(!fixture.root.path().join("messages/tapbacks.jsonl").exists());
+    assert!(!fixture.root.path().join("messages/typing.jsonl").exists());
+    assert_eq!(fixture.sent().len(), 1);
     stop.send(()).unwrap();
     server.await.unwrap().unwrap();
 }

@@ -377,6 +377,21 @@ impl ChannelClient {
         .await
     }
 
+    /// The typing bubble, on a channel that says it shows one. Nothing is
+    /// claimed from it, so its outcome is ignored.
+    pub async fn typing(&self, native_conversation: &str, on: bool) {
+        if !self.capabilities.typing || self.manifest.account_holder == AccountHolder::Owner {
+            return;
+        }
+        let _ = self
+            .call(
+                "typing",
+                json!({"conversation":native_conversation,"on":on}),
+                Duration::from_secs(5),
+            )
+            .await;
+    }
+
     pub async fn health(&self) -> Result<Value> {
         self.call("health", json!({}), Duration::from_secs(10))
             .await
@@ -533,6 +548,12 @@ impl Deliver for ChannelDelivery {
                 },
             })
         }
+    }
+
+    fn typing(&mut self, on: bool) -> impl Future<Output = ()> {
+        let client = self.client.clone();
+        let conversation = self.native_conversation.clone();
+        async move { client.typing(&conversation, on).await }
     }
 }
 

@@ -1,6 +1,6 @@
 ---
 name: setup-oppa
-description: Set up OPPA on this Mac for its owner, from a fresh clone to a reply on their phone. The agent builds, configures and installs the service; the owner names the assistant, picks how it sounds, answers a few questions, grants macOS access with a couple of clicks and sends one text; the assistant itself finishes getting to know them in chat. Use for "set up OPPA", "install OPPA", onboarding, moving to a new Mac, or repairing a service that stopped answering.
+description: Set up OPPA on this Mac for its owner, from a fresh clone to a reply on their phone. The agent builds, configures and installs the service; the owner names the assistant, picks how it sounds, answers a few questions, grants macOS access with a couple of clicks and sends one text; the assistant itself finishes getting to know them in chat. Use for "set up OPPA", "install OPPA", onboarding, moving to a new Mac, repairing a service that stopped answering, or turning on iMessage tapbacks and the typing bubble.
 ---
 
 # Set up OPPA
@@ -75,6 +75,12 @@ Ask these together, with defaults filled in from what you can see:
   the service runs with either; with neither, setup ends at a reply in the
   terminal (step 4), and the owner talks through `oppa chat` with `oppa work`
   running beside it for background tasks.
+- **Tapbacks and typing (optional, iMessage only).** Should the assistant react
+  to messages with tapbacks and show the typing bubble while it writes? Both
+  need System Integrity Protection off, which lowers the Mac's protection; say
+  so plainly and suggest it only for a Mac that mostly runs the assistant. Text
+  works the same without it, and it can be turned on later. If yes, do
+  "Tapbacks and typing" below after step 9.
 - **Slack and other agents (optional).** Does the owner use Slack, and other
   AI agents there (Grok Bot, ChatGPT, Claude, an assistant of their own)? If
   so, step 10 sets up a room where the assistant can hand them work.
@@ -315,6 +321,40 @@ read their answers. Do this only if the owner said yes in step 3.
 6. **Test.** The owner asks the assistant to have one agent do something
    small. Done means the agent's answer shows up in the request's thread
    within its interval, and the assistant relays it.
+
+## Tapbacks and typing (optional)
+
+The assistant can react with the six classic tapbacks and show the typing
+bubble while it writes. Messages offers no way to do either from outside, so
+imsg loads a small helper into Messages (its bridge), and macOS allows that only
+with System Integrity Protection (SIP) off. Without it nothing breaks: the
+assistant just answers in words. Do this at setup if the owner said yes, or any
+time later when they ask.
+
+1. **Check.** `csrutil status`. If it says disabled, go to step 3.
+2. **Owner: turn SIP off.** Say first what it costs: SIP keeps even
+   administrator programs from changing macOS itself, and turning it off lowers
+   that protection for the whole Mac. If they still want it, on Apple silicon:
+   shut the Mac down; hold the power button until "Loading startup options"
+   appears; choose Options, then Continue; sign in if asked; choose Utilities,
+   then Terminal; type `csrutil disable`, press Return, and confirm; then choose
+   the Apple menu, Restart. On an Intel Mac, hold Cmd-R while it starts instead
+   of the power button. Wait until they are back and signed in.
+3. **The adapter starts the helper.** Look at the iMessage channel in
+   `~/.oppa-private/config.toml`: its command must end with `--launch-bridge`.
+   New installs have it; on an older one, add it, with the owner's yes. Then
+   `~/.oppa/bin/oppa service stop` and `~/.oppa/bin/oppa service start`. On each
+   start, if the helper is not running, the adapter restarts Messages with it,
+   so it comes back by itself after every reboot.
+4. **Prove it.** `~/.oppa/channels/imsg-bridge/imsg status` must show
+   "Advanced features ... Available - IMCore bridge connected" and bridge
+   version v2. Then the owner texts the assistant something worth a reaction,
+   such as "I got the job!". Done means they saw the typing bubble and the
+   reply, and a tapback if the assistant chose one; `oppa history` shows a
+   tapback as a `reaction` event, delivered only once Messages showed it.
+
+To turn it off, the owner runs `csrutil enable` the same way in step 2. The
+assistant goes back to words only.
 
 ## After setup
 

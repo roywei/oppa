@@ -38,6 +38,8 @@ pub fn imessage(paths: &Paths) -> ChannelManifest {
         runtime(paths, "channels/imessage"),
         "--imsg".into(),
         runtime(paths, "channels/imsg-bridge/imsg"),
+        // Tapbacks and typing, once the owner turns SIP off; text works either way.
+        "--launch-bridge".into(),
     ];
     manifest("imessage", "assistant", 45, args)
 }

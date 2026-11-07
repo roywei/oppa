@@ -936,6 +936,19 @@ impl Store {
         self.outbox_entry(id)
     }
 
+    /// The outbox entry queued under `idempotency_key`, if any.
+    pub fn outbox_by_key(&self, idempotency_key: &str) -> Result<Option<OutboxEntry>> {
+        let id: Option<i64> = self
+            .connection
+            .query_row(
+                "SELECT id FROM outbox WHERE idempotency_key=?1",
+                [idempotency_key],
+                |r| r.get(0),
+            )
+            .optional()?;
+        id.map(|id| self.outbox_entry(id)).transpose()
+    }
+
     pub fn outbox_entry(&self, id: i64) -> Result<OutboxEntry> {
         let (event_seq,key,state,attempts,native_id,evidence):(i64,String,String,u32,Option<String>,Option<String>)=self.connection.query_row("SELECT event_seq,idempotency_key,state,attempts,native_id,evidence FROM outbox WHERE id=?1",[id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?)))?;
         let event = self.event(event_seq)?;

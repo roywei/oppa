@@ -16,10 +16,13 @@ a message forwarded in the last 20 minutes are read again every few seconds, and
 a forwarded message whose text changed is forwarded again under its GUID. The
 host records that as an edit, as it does a changed row in a restart's overlap.
 
-A `react` request sends a tapback on a message through imsg's bridge; the
-six classic tapbacks only, since imsg cannot send a custom emoji one.
+Tapbacks (`react`) and the typing bubble (`typing`) need imsg's bridge: a helper
+inside Messages, which runs only with SIP off and Messages started by `imsg
+launch`. Without it the adapter claims neither, and text works as before. Only
+the six classic tapbacks: imsg cannot send a custom emoji one. A tapback is a
+receipt only once history shows a new reaction of ours of that kind on the message.
 
-Usage: imessage.py --state DIR [--imsg PATH] [--db PATH] [--overlap N] [--edit-poll SECONDS]
+Usage: imessage.py --state DIR [--imsg PATH] [--db PATH] [--overlap N] [--edit-poll SECONDS] [--launch-bridge]
 Requires imsg 0.15 or later and Full Disk Access for the process running it.
 """
 
@@ -191,6 +194,9 @@ class Adapter:
         # GUID -> (chat_id, body, when) of messages forwarded within the edit window.
         self.recent = {}
         self.reread_error = None
+        # Chat GUID -> chat.db row id, which imsg's history reads by.
+        self.chat_ids = {}
+        self.tapbacks = self.typing_ok = False
         command = [options.imsg, "rpc"] + (["--db", options.db] if options.db else [])
         self.imsg = Imsg(command, self.notification, self.imsg_exited)
 
@@ -220,7 +226,7 @@ class Adapter:
             params = request.get("params") or {}
             if method == "shutdown":
                 break
-            handler = {"initialize": self.initialize, "send": self.send, "react": self.react,
+            handler = {"initialize": self.initialize, "send": self.send, "react": self.react, "typing": self.typing,
                        "health": self.health}.get(method)
             if handler is None:
                 if request_id is not None:
@@ -252,21 +258,44 @@ class Adapter:
         missing = {"send", "watch.subscribe"} - set(status.get("methods") or [])
         if missing:
             raise AdapterFailure(-32603, "imsg is missing " + ", ".join(sorted(missing)) + "; install imsg 0.15 or later")
-        self.tapbacks = "tapback" in (status.get("methods") or [])
+        status = self.bridge(status)
         self.subscribe(self.state.resume_after(self.options.overlap))
         if "messages.history" in (status.get("methods") or []):
             threading.Thread(target=self.watch_edits, daemon=True).start()
         else:
             self.reread_error = "imsg has no messages.history; edits are seen only after a restart"
         return {"protocol_version": PROTOCOL_VERSION,
-                "capabilities": {"attachments": True, "receipts": True, "threads": False, "reactions": self.tapbacks, "typing": False}}
+                "capabilities": {"attachments": True, "receipts": True, "threads": False, "reactions": self.tapbacks, "typing": self.typing_ok}}
+
+    def bridge(self, status):
+        """Tapbacks and typing go through imsg's helper inside Messages, which needs
+        SIP off and Messages started by `imsg launch`. With --launch-bridge and SIP
+        off, a bridge that is down is started once; Messages restarts. Either way
+        the channel claims only what the bridge can do now."""
+        if self.options.launch_bridge and not bridge_ready(status) and sip_disabled():
+            try:
+                subprocess.run([self.options.imsg, "launch"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=60)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            deadline = time.monotonic() + 15
+            while not bridge_ready(status) and time.monotonic() < deadline:
+                time.sleep(1)
+                status = self.imsg.call("status")
+        ready = bridge_ready(status)
+        methods = set(status.get("methods") or [])
+        selectors = ((status.get("bridge") or {}).get("selectors")) or {}
+        self.tapbacks = ready and "tapback" in methods and "messages.history" in methods and selectors.get("sendReaction") is True
+        self.typing_ok = ready and "typing" in methods and selectors.get("typing") is True
+        return status
 
     def health(self, _params):
         status = self.imsg.call("status", timeout=10)
         database = status.get("database") or {}
         return {"ok": bool(database.get("ready")) and self.subscription is not None,
                 "imsg_version": status.get("version"), "cursor": self.state.cursor,
-                "edits": self.reread_error or "watched"}
+                "edits": self.reread_error or "watched",
+                "bridge": "ready" if bridge_ready(status) else "off: tapbacks and typing are not sent"}
 
     def send(self, params):
         chat = params.get("conversation")
@@ -306,22 +335,67 @@ class Adapter:
                 self.release_held()
 
     def react(self, params):
-        """A tapback through imsg's bridge. imsg answers only once Messages took
-        it, so an answer is the receipt; the reaction row's GUID when imsg names one."""
+        """A tapback through imsg's bridge, confirmed only when Messages shows a new
+        reaction of ours of that kind on the message. imsg's answer alone is no receipt."""
         chat, target, kind = params.get("conversation"), params.get("message"), params.get("reaction")
         if not (bounded(chat) and bounded(target)) or kind not in TAPBACKS:
             raise AdapterFailure(NOT_SENT, "no conversation, message or known reaction")
+        chat_id = self.chat_id(chat)
+        before = self.own_reactions(chat_id, target) if chat_id is not None else None
+        if before is None:
+            raise AdapterFailure(NOT_SENT, "the message is not in this chat's recent history")
         try:
-            result = self.imsg.call("tapback", {"chat_guid": chat, "message_guid": target, "kind": kind})
+            self.imsg.call("tapback", {"chat_guid": chat, "message_guid": target, "kind": kind})
         except ImsgError as error:
             if error.data.get("disposition") == "not_started" or error.code in IMSG_NOT_DISPATCHED:
                 raise AdapterFailure(NOT_SENT, f"imsg did not dispatch the tapback: {error}")
             raise AdapterFailure(UNVERIFIED, f"imsg tapback outcome unknown: {error}")
         except TimeoutError as error:
             raise AdapterFailure(UNVERIFIED, f"imsg tapback outcome unknown: {error}")
-        result = result if isinstance(result, dict) else {}
-        guid = bounded(result.get("guid")) or bounded(result.get("message_guid"))
-        return {"native_id": guid or f"tapback:{kind}:{target}"}
+        deadline = time.monotonic() + ECHO_WAIT_SECONDS
+        while True:
+            try:
+                now = self.own_reactions(chat_id, target) or {}
+            except Exception:
+                now = {}
+            new = [rowid for rowid, seen in now.items() if seen == kind and rowid not in before]
+            if new:
+                return {"native_id": f"reaction:{max(new)}"}
+            if time.monotonic() >= deadline:
+                raise AdapterFailure(UNVERIFIED, "Messages took the tapback but it was not seen on the message")
+            time.sleep(0.25)
+
+    def own_reactions(self, chat_id, target):
+        """{reaction row id: kind} of the account's own reactions on `target`, or None
+        when the message is not in view."""
+        for message in self.history(chat_id, {target}):
+            if message.get("guid") == target:
+                return {r["id"]: r.get("type") for r in message.get("reactions") or []
+                        if isinstance(r, dict) and r.get("is_from_me") and isinstance(r.get("id"), int)}
+        return None
+
+    def chat_id(self, chat):
+        with self.flow:
+            known = self.chat_ids.get(chat)
+        if known is not None:
+            return known
+        result = self.imsg.call("chats.list", {"limit": 500}, timeout=30)
+        for row in (result or {}).get("chats") or []:
+            if isinstance(row, dict) and isinstance(row.get("id"), int):
+                with self.flow:
+                    self.chat_ids[row.get("guid")] = row["id"]
+                    self.chat_ids[row.get("identifier")] = row["id"]
+        with self.flow:
+            return self.chat_ids.get(chat)
+
+    def typing(self, params):
+        """The typing bubble, while the host composes a reply. Best effort: a
+        failure only means no bubble."""
+        chat = params.get("conversation")
+        if not bounded(chat) or not self.typing_ok:
+            raise AdapterFailure(NOT_SENT, "no conversation, or no typing on this Mac")
+        self.imsg.call("typing", {"chat_guid": chat, "typing": params.get("on") is True}, timeout=5)
+        return {}
 
     def await_echo(self, chat, text):
         deadline = time.monotonic() + ECHO_WAIT_SECONDS
@@ -408,6 +482,8 @@ class Adapter:
 
     def publish(self, message, event):
         # Caller holds self.flow, so what `recent` holds is always the text sent last.
+        if isinstance(message.get("chat_id"), int):
+            self.chat_ids[event["conversation"]["native_id"]] = message["chat_id"]
         self.emit({"jsonrpc": "2.0", "method": "event", "params": event})
         if not message.get("is_from_me") and isinstance(message.get("chat_id"), int):
             # The conversation it was filed under, so a re-read row filed elsewhere is never its edit.
@@ -539,6 +615,19 @@ def normalize(message):
     return event
 
 
+def bridge_ready(status):
+    bridge = status.get("bridge") or {}
+    return bridge.get("v2_ready") is True or (bridge.get("ready") is True and "v2_ready" not in bridge)
+
+
+def sip_disabled():
+    try:
+        out = subprocess.run(["/usr/bin/csrutil", "status"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "status: disabled" in out
+
+
 def interval(text):
     """Seconds between edit reads: a finite number above zero, checked before the adapter starts, since a
     bad one would stop the reading thread while health still reported edits as watched."""
@@ -557,6 +646,8 @@ def main():
     parser.add_argument("--imsg", default="imsg", help="imsg 0.15+ executable")
     parser.add_argument("--db", help="Messages database (defaults to imsg's own default)")
     parser.add_argument("--overlap", type=int, default=20, help="ROWIDs replayed after a restart")
+    parser.add_argument("--launch-bridge", action="store_true",
+                        help="with SIP off, start imsg's Messages helper when it is down, restarting Messages")
     parser.add_argument("--edit-poll", type=interval, default=5.0, help="seconds between reads of recently active chats for edits")
     Adapter(parser.parse_args()).serve()
 

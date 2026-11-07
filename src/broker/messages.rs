@@ -47,7 +47,6 @@ pub(super) struct MessageReact {
     context: String,
     event_seq: i64,
     reaction: String,
-    idempotency_key: String,
 }
 
 /// The tapbacks a channel takes; iMessage names these six.
@@ -91,7 +90,7 @@ pub(super) fn definitions(grant: &RunGrant, context: &Value) -> Vec<Value> {
     }
     // A conversation turn reacts; a delegated task or heartbeat has no one to react to.
     if grant.task_access == TaskAccess::Manage {
-        tools.push(tool("messages.react", "React to a message in the current conversation with a tapback (love ❤️, like 👍, dislike 👎, laugh 😂, emphasize ‼️, question ❓), as a friend would: instead of a reply that would say only as much, or beside one. Name the message by its event_seq. It goes out when this turn ends; a channel without reactions refuses it.", json!({"context":context,"event_seq":{"type":"integer"},"reaction":{"type":"string","enum":REACTIONS},"idempotency_key":{"type":"string","minLength":1,"maxLength":256}}), &["context","event_seq","reaction","idempotency_key"], false));
+        tools.push(tool("messages.react", "React to a message in the current conversation with a tapback (love ❤️, like 👍, dislike 👎, laugh 😂, emphasize ‼️, question ❓), as a friend would: instead of a reply that would say only as much, or beside one. Name the message by its event_seq. A message takes one reaction from you, and the first is final: asking again returns that one. It goes out when this turn ends; a channel without reactions refuses it.", json!({"context":context,"event_seq":{"type":"integer"},"reaction":{"type":"string","enum":REACTIONS}}), &["context","event_seq","reaction"], false));
     }
     if grant.task_access != TaskAccess::Manage || grant.access.is_read() {
         return tools;
@@ -227,10 +226,7 @@ impl Broker {
         if self.launch.grant.task_access != TaskAccess::Manage {
             return Err(denied());
         }
-        if !REACTIONS.contains(&args.reaction.as_str())
-            || args.idempotency_key.trim().is_empty()
-            || args.idempotency_key.len() > 256
-        {
+        if !REACTIONS.contains(&args.reaction.as_str()) {
             return Err(invalid());
         }
         let grant = &self.launch.grant;
@@ -261,19 +257,35 @@ impl Broker {
         if self.on_owners_account(&conversation.channel, &conversation.account) {
             return Err(owners_account());
         }
-        let key = format!(
-            "send:react:{}:{}",
-            grant.input_seq,
-            digest(&args.idempotency_key).map_err(|_| unavailable())?
-        );
-        let mut result = self.journaled_effect("messages.react", "outward", &args, || {
-            let entry = store
-                .enqueue_reaction(&target.conversation, &key, target.seq, &args.reaction)
-                .map_err(|_| invalid())?;
-            Ok(json!({"outbox_id":entry.id,"event_seq":entry.event.seq}))
-        })?;
-        result["delivery"] = json!({"state":"queued","meaning":"It goes out when this turn ends."});
-        Ok(result)
+        // One reaction per message, ever: the key is the message's own.
+        let key = format!("send:react:{}", target.seq);
+        let earlier = store.outbox_by_key(&key).map_err(|_| unavailable())?;
+        let entry = match earlier {
+            Some(entry) => entry,
+            None => {
+                let receipt = self.journaled_effect("messages.react", "outward", &args, || {
+                    let entry = store
+                        .enqueue_reaction(&target.conversation, &key, target.seq, &args.reaction)
+                        .map_err(|_| unavailable())?;
+                    Ok(json!({"outbox_id":entry.id}))
+                })?;
+                let id = receipt["receipt"]["outbox_id"]
+                    .as_i64()
+                    .ok_or_else(unavailable)?;
+                store.outbox_entry(id).map_err(|_| unavailable())?
+            }
+        };
+        let delivery = match entry.state {
+            DeliveryState::Sent => json!({"state":"sent"}),
+            DeliveryState::Unknown => {
+                json!({"state":"unknown","meaning":"It may have reached them. Do not react again."})
+            }
+            _ if entry.attempts > 0 => {
+                json!({"state":"refused","meaning":"The channel did not send it.","evidence":entry.evidence})
+            }
+            _ => json!({"state":"queued","meaning":"It goes out when this turn ends."}),
+        };
+        Ok(json!({"reaction":entry.event.body,"event_seq":entry.event.seq,"delivery":delivery}))
     }
 
     /// Copies of the files a message carries, where the host keeps them until
