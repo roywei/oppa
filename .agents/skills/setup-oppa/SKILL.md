@@ -76,8 +76,7 @@ Ask these together, with defaults filled in from what you can see:
   terminal (step 4), and the owner talks through `oppa chat` with `oppa work`
   running beside it for background tasks.
 - **Dashboard (recommended).** A page on this Mac for web chat, scheduled jobs,
-  access, the assistant's personality and rules, people, and a developer view of
-  the instance's health.
+  access, the assistant's personality and rules, people, and the instance's health.
 - **Accounts.** Mail, calendar, files, brokerage and anything else come from the
   harness itself, not from OPPA: whatever the owner connects in Claude
   (claude.ai Settings, Connectors, or `claude mcp add`) or Codex (its apps and

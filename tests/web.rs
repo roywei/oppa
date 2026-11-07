@@ -617,10 +617,11 @@ async fn requests_without_the_owner_or_from_elsewhere_are_refused_and_reach_noth
 // schedule and cancel routes run the CLI with exactly these arguments, as an
 // argv list without a shell, and input that fails validation never reaches it.
 #[test]
-fn developer_mode_shows_only_health() {
+fn one_tab_bar_ends_with_health() {
     // What the assistant could improve reaches the owner in its morning
     // message, not a dashboard view. The source-checkout views' endpoints are
-    // gone, not merely hidden, and Developer mode lists only Health.
+    // gone, not merely hidden, and there is no separate Developer mode: Health
+    // is the last tab of the one tab bar.
     let adapter = Standalone::start(Cli::Stub);
     let page = Page::sign_in(&adapter.state());
     for gone in [
@@ -638,11 +639,18 @@ fn developer_mode_shows_only_health() {
         404
     );
     let html = include_str!("../resources/adapters/web.html");
-    let developer = html
+    let tabs = html
         .lines()
-        .find(|line| line.trim_start().starts_with("developer:"))
+        .find(|line| line.starts_with("const TABS = "))
         .unwrap();
-    assert_eq!(developer.trim(), "developer: [['health', 'Health']],");
+    assert!(
+        tabs.ends_with("['people', 'People'], ['health', 'Health']];"),
+        "{tabs}"
+    );
+    assert!(
+        !html.contains("data-mode="),
+        "the User/Developer switch is back"
+    );
 }
 
 #[test]

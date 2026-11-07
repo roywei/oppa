@@ -642,7 +642,7 @@ class App:
                 person["notes"].append(path)
         return {"people": sorted(people.values(), key=lambda person: person["name"].lower())}
 
-    # Developer views ------------------------------------------------------------
+    # Health -------------------------------------------------------------------
 
     def route_doctor(self, query, body):
         code, checks = self.oppa.json(["doctor"], timeout=DOCTOR_SECONDS, ok=(0, 1))
@@ -915,7 +915,7 @@ def main():
     parser.add_argument("--private-dir", required=True, help="the instance's private configuration directory")
     parser.add_argument("--port", type=int, default=8765, help="TCP port; 0 picks a free one")
     parser.add_argument("--bind", default="127.0.0.1", help="IPv4 address to listen on")
-    parser.add_argument("--source", help="OPPA source checkout, for the developer views")
+    parser.add_argument("--source", help="OPPA source checkout (reported in the session)")
     parser.add_argument("--channel", default="web", help="this channel's id in [[channels]]")
     options = parser.parse_args()
     if not options.oppa:

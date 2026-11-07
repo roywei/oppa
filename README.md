@@ -138,11 +138,10 @@ The page runs the same `oppa` that `serve` runs; `--oppa <path>` names another.
 
 Restart `serve`, then open the address in `<runtime>/channels/web/login-url` in
 a browser on the Mac; it sets a cookie for that browser. The page answers only
-on 127.0.0.1 and its own address and refuses writes from other sites. User mode
-holds chat, scheduled jobs, access, personality, rules and people; Developer
-mode shows health. What the assistant could improve about itself it tells you
-in its morning message. Delete `<runtime>/channels/web/token` to sign
-every browser out.
+on 127.0.0.1 and its own address and refuses writes from other sites. Its tabs
+hold chat, scheduled jobs, access, personality, rules, people and health. What
+the assistant could improve about itself it tells you in its morning message.
+Delete `<runtime>/channels/web/token` to sign every browser out.
 
 The iMessage adapter starts at the current end of the Messages database on first
 run and never answers older history. Its watch cursor lives in `--state`; after a restart it
