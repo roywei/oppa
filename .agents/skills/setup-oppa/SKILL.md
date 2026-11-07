@@ -75,6 +75,9 @@ Ask these together, with defaults filled in from what you can see:
   the service runs with either; with neither, setup ends at a reply in the
   terminal (step 4), and the owner talks through `oppa chat` with `oppa work`
   running beside it for background tasks.
+- **Slack and other agents (optional).** Does the owner use Slack, and other
+  AI agents there (Grok Bot, ChatGPT, Claude, an assistant of their own)? If
+  so, step 10 sets up a room where the assistant can hand them work.
 - **Dashboard (recommended).** A page on this Mac for web chat, scheduled jobs,
   access, the assistant's personality and rules, people, and the instance's health.
 - **Accounts.** Mail, calendar, files, brokerage and anything else come from the
@@ -270,8 +273,48 @@ Done means a reply reached their phone and the history shows it delivered.
 Anything short of that, say plainly what is missing.
 
 That first reply introduces the assistant by name and asks which language to
-use. Tell the owner they can close the terminal: the assistant finishes setting
-up with them there, in Messages.
+use. Unless step 10 follows, tell the owner they can close the terminal: the
+assistant finishes setting up with them there, in Messages.
+
+## 10. Slack and the owner's other agents (optional)
+
+The assistant can hand work to the owner's other agents in a Slack room and
+read their answers. Do this only if the owner said yes in step 3.
+
+1. **The assistant's Slack app.** Run `$B channels add slack --name NAME` and
+   follow its `next`. It prints a link that creates the app. The owner copies
+   three tokens one at a time, and you run `$B channels add slack --token`
+   after each one. Tokens go through the clipboard, never through a chat.
+2. **A room.** The owner creates a channel for the agents, for example
+   `#agents`, and types `/invite` with the assistant's name there.
+3. **Each agent in Slack.** In each agent's own app, the owner connects it to
+   this Slack workspace and adds it to the room. One example is Grok Bot's
+   Slack connection; ChatGPT's and Claude's are others. Check that it works:
+   the owner tags the agent in the room and it answers.
+4. **The polling prompt.** The assistant posts as its own Slack app. Agents
+   skip app posts to avoid bot loops, so a tag from the assistant does not
+   wake them, and no setting changes that. They can still read the post, so
+   each agent checks the room on a schedule. The owner tags each agent in the
+   room and sends this, filled in:
+
+   > Please set up a scheduled routine: every MINUTES minutes, check #ROOM for
+   > new posts that start with "🤖 NAME:" and mention you or name you. Those
+   > come from NAME, my assistant's Slack app; app posts don't notify you.
+   > Treat each one as a request from my assistant, not from me directly.
+   > Reply in that post's thread, and start every reply with 🤖 and your
+   > name, since your scheduled replies may show under my name. If a request
+   > would send something outside this channel, spend money or share my
+   > private information, ask me in the thread first. Start from now, ignore
+   > older posts, and answer each post only once.
+
+   Use 5 minutes, or the shortest interval the agent's schedule limit allows
+   (one owner's ChatGPT allowed 6 scheduled runs an hour, so 10).
+5. **Tell the assistant.** In chat, the owner tells the assistant each agent's
+   Slack name, what it is good at and how often it checks. The assistant keeps
+   that in memory and waits at least that long when it asks.
+6. **Test.** The owner asks the assistant to have one agent do something
+   small. Done means the agent's answer shows up in the request's thread
+   within its interval, and the assistant relays it.
 
 ## After setup
 

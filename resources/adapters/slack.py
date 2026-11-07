@@ -5,14 +5,15 @@ One Slack app the owner creates from the manifest link `--login-link` prints car
 - the bot token (xoxb-) receives and answers: the owner's direct chat with the app, and every channel the
   app is invited to, such as a room the owner shares with other agents;
 - the app-level token (xapp-) opens the Socket Mode connection, so nothing on this Mac listens for Slack;
-- the user token (xoxp-, only chat:write) posts as the owner. Other agents' Slack bots may answer
-  only the owner, so `ask` posts with it to hand them a request and reads their replies with the bot token.
+- the user token (xoxp-, only users:read) names the owner, whose handle the login registers.
+
+`ask` hands the owner's other agents a request as this app and reads their replies. Agents skip app posts, so
+they find these requests by checking the channel on a schedule the owner set up with each of them.
 
 Who wrote a message is evidence the adapter reports, never something it reads from text: a message an app
 posted (it carries a bot or app id) is that app's, `app:<app id>`, even when Slack shows it under the
 owner's name, as with an assistant that posts with the owner's token; only a person's own message has
-their user id as its handle. This app's posts are the assistant's (`is_me`), including those `ask` made as
-the owner, which it records under a lock before Slack can deliver them.
+their user id as its handle. This app's posts, `ask`'s included, are the assistant's (`is_me`).
 
 In a direct chat a reply goes into the conversation; in a channel it goes into the thread of the message it
 answers, so a room stays readable. Text only: a file arrives as a bracketed note, and a send with
@@ -32,7 +33,6 @@ Usage: slack.py --state DIR [--api-url URL] [--login-link [--name NAME] | --logi
 import argparse
 import base64
 import datetime
-import fcntl
 import hashlib
 import html
 import json
@@ -61,7 +61,6 @@ REQUEST_SECONDS = 20.0
 PING_SECONDS = 30.0
 READ_SECONDS = 90.0
 POLL_SECONDS = 5.0
-POSTED_KEPT = 500
 ROOTS_KEPT = 5000
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 KINDS = {"xoxb-": "bot", "xapp-": "app", "xoxp-": "user"}
@@ -70,7 +69,7 @@ SAID = {None, "thread_broadcast", "file_share", "bot_message", "me_message"}
 MANIFEST_SCOPES = {
     "bot": ["chat:write", "im:history", "im:read", "channels:history", "channels:read", "groups:history",
             "groups:read", "mpim:history", "mpim:read", "users:read"],
-    "user": ["chat:write"],
+    "user": ["users:read"],
 }
 
 
@@ -230,14 +229,6 @@ class State:
             os.remove(self.path(name))
         except FileNotFoundError:
             pass
-
-    def posting(self):
-        """Held while `ask` posts as the owner and records the post, and by the adapter before it decides a
-        message from the owner's own account is the owner's: Slack cannot deliver a post before it is made, so
-        the adapter always sees the record of one `ask` made."""
-        lock = open(self.path("posting.lock"), "a")
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        return lock
 
 
 class Names:
@@ -510,15 +501,6 @@ class Adapter:
             return dict({"handle": handle, "is_me": False}, **({"display_name": name} if name else {}))
         if user is None:
             return None
-        if user == account.get("owner"):
-            # A post `ask` made as the owner is recorded before Slack can deliver it.
-            with self.state.posting():
-                if message.get("ts") in self.state.read("posted.json").get("ts", []):
-                    return {"handle": user, "is_me": True}
-            # A post `ask` made whose record was lost still starts with its label; reading it as the assistant's
-            # only ever takes authority away.
-            if str(message.get("text") or "").startswith(label(account)):
-                return {"handle": user, "is_me": True}
         name = self.names.user(user)
         return dict({"handle": user, "is_me": False}, **({"display_name": name} if name else {}))
 
@@ -730,10 +712,9 @@ def collect(options, account, bot, channel, thread, after, top_level):
         if top_level:
             found += bot.get("conversations.history", {"channel": channel, "oldest": after, "limit": "100"}).get(
                 "messages") or []
-        posted = set(State(options.state).read("posted.json").get("ts", []))
         for message in found:
             ts = message.get("ts")
-            if not bounded(ts) or not re.fullmatch(r"\d+(\.\d+)?", ts) or float(ts) <= float(after) or ts in posted:
+            if not bounded(ts) or not re.fullmatch(r"\d+(\.\d+)?", ts) or float(ts) <= float(after):
                 continue
             if {message.get("bot_id"), message.get("app_id")} & own:
                 continue
@@ -759,25 +740,21 @@ def collect(options, account, bot, channel, thread, after, top_level):
 
 
 def label(account):
-    """How `ask` starts each post it makes as the owner."""
+    """How `ask` starts each post, which the agents' scheduled checks look for."""
     return f"\N{ROBOT FACE} {(account.get('name') or 'OPPA').strip()}:"
 
 
 def ask(options):
-    """Post as the owner, labelled with the assistant's name, then wait for the agents' replies."""
-    state = State(options.state)
+    """Post as this app, labelled with the assistant's name, then wait for the agents' replies."""
     account = logged_in(options)
-    bot, user = Api(options.api_url, account["bot"]), Api(options.api_url, account["user"])
+    bot = Api(options.api_url, account["bot"])
     channel = channel_id(bot, options.channel)
     mentions = " ".join(mention(bot, name) for name in options.mention)
     text = " ".join(part for part in (label(account), mentions, options.text.strip()) if part)
     payload = {"channel": channel, "text": text, "unfurl_links": False}
     if options.thread:
         payload["thread_ts"] = options.thread
-    with state.posting():
-        ts = user.call("chat.postMessage", payload)["ts"]
-        record = state.read("posted.json").get("ts", [])
-        state.write("posted.json", {"ts": (record + [ts])[-POSTED_KEPT:]})
+    ts = bot.call("chat.postMessage", payload)["ts"]
     result = collect(options, account, bot, channel, options.thread or ts, ts, top_level=not options.thread)
     print(json.dumps(dict(result, posted=ts), ensure_ascii=False), flush=True)
 
@@ -800,7 +777,7 @@ def main():
     parser.add_argument("--clipboard", default="/usr/bin/pbpaste", help="command that prints the clipboard")
     parser.add_argument("--login-activate", action="store_true", help="use the checked tokens, then exit")
     commands = parser.add_subparsers(dest="command")
-    asking = commands.add_parser("ask", help="post as the owner and wait for replies")
+    asking = commands.add_parser("ask", help="post as this app to other agents and wait for their replies")
     asking.add_argument("--channel", required=True)
     asking.add_argument("--text", required=True)
     asking.add_argument("--mention", action="append", default=[], help="a member to @mention, by name")
