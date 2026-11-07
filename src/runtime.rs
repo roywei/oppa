@@ -92,7 +92,7 @@ impl ConversationIdentity {
     }
 }
 
-pub const MANUAL: &str = include_str!("../resources/manual/SOUL.md");
+pub const MANUAL: &str = include_str!("../resources/manual/MANUAL.md");
 /// The one fixed notice: sent in a direct conversation when every attempt ended
 /// without an answer and none may have acted. Resending is then safe, and no
 /// automatic retry is promised because none happens.

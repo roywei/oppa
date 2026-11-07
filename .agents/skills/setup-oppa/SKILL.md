@@ -1,13 +1,13 @@
 ---
 name: setup-oppa
-description: Set up OPPA on this Mac for its owner, from a fresh clone to a reply on their phone. The agent builds, configures and installs the service; the owner names the assistant, picks how it sounds, answers a few questions, grants macOS access with a couple of clicks and sends one text; the assistant itself finishes getting to know them in chat. Use for "set up OPPA", "install OPPA", onboarding, moving to a new Mac, repairing a service that stopped answering, or turning on iMessage tapbacks and the typing bubble.
+description: Set up OPPA on this Mac for its owner, from a fresh clone to a reply on their phone. The agent builds, configures and installs the service; the owner names the assistant, picks how it sounds and looks (Codex draws four faces to choose from), answers a few questions, grants macOS access with a couple of clicks and sends one text; the assistant itself finishes getting to know them in chat. Use for "set up OPPA", "install OPPA", onboarding, moving to a new Mac, repairing a service that stopped answering, upgrading an instance from before the soul note, or turning on iMessage tapbacks and the typing bubble.
 ---
 
 # Set up OPPA
 
 You do the work; the owner decides and clicks. Everything a command can do, you
-do. Ask the owner only for what no command can supply: a name and a voice for
-the assistant, which accounts to connect, their own phone number, macOS
+do. Ask the owner only for what no command can supply: a name, a personality
+and a look for the assistant, which accounts to connect, their own phone number, macOS
 permission clicks, and one text from their phone. Batch the questions into one
 round. The owner may never have used a terminal: say what you are doing in
 plain words, and never ask them to type a command.
@@ -16,9 +16,9 @@ Setup ends at the first reply on their chosen channel (phone, dashboard or
 terminal). Write the onboarding note before that handoff, with choices already
 made and any optional setup still pending, so OPPA does not ask them again.
 Everything else, such as which
-language to reply in, the household, importing what Claude Code and Codex
-remember and the abilities they have not tried, the assistant takes up itself
-in chat, one thing at a time, from the onboarding note you write in step 5.
+language to reply in, the household, what other assistants know about them and
+the abilities they have not tried, the assistant takes up itself in chat, one
+thing at a time, from the onboarding note you write in step 5.
 
 The owner is present for the whole run, which is what installing a service and
 changing macOS permissions require. Never grant or widen a permission yourself,
@@ -39,7 +39,9 @@ ls -d ~/.oppa ~/.oppa-private 2>/dev/null
 ```
 
 If an instance exists, this is a repair or an upgrade: skip `init`, keep its
-config and memory, and go to the first step whose check fails. Never delete or
+config and memory, and go to the first step whose check fails. An instance
+from before the soul note has `assistant/persona.md`; see "Upgrading to the
+soul note" below. Never delete or
 re-create an instance; if the owner wants a fresh start, move the old
 directories aside with a dated name and say where.
 
@@ -87,16 +89,28 @@ MCP server, plugin and skill they connected there is the assistant's too.
 
 ## 3. Ask once
 
-Ask these together, with defaults filled in from what you can see:
+Ask these together, with defaults filled in from what you can see. Start with
+who the assistant is: it is the part owners enjoy, and the Apple ID below
+should carry the same name. Each of these has a default and can be skipped;
+say "You can change any of this later by asking."
 
-- **Name.** What the assistant is called. Ask first: its Apple ID (below) should
-  carry the same name, since that is what shows in Messages.
-- **Voice.** Show the four presets in `personas/` by their sample line, and
-  offer "describe your own":
+- **Name.** What the assistant is called. Offer three names that fit the
+  personality or look they want, and more if they ask. Its Apple ID (below)
+  should carry the same name, since that is what shows in Messages.
+- **Personality.** Show the four presets in `resources/souls/` by their sample
+  line, and offer "describe your own":
   - *Chief of staff* (default): brief, a step ahead, offers to handle things.
   - *Warm friend*: encouraging, notices the small things.
   - *Calm and minimal*: the answer and nothing else.
   - *Playful*: light humor, good with kids around.
+- **Look.** A few words for a face ("a round cobalt robot with warm cheeks",
+  "a watercolor fox"), "surprise me" (you choose from the name and
+  personality), a picture of theirs, or none (initials until later). "The
+  face" below says who draws it.
+- **What Claude Code and Codex remember.** May the assistant bring in what they
+  already know about the owner? It reads their memory files, keeps what lasts
+  in OPPA memory and never writes back to them. A yes starts with the first
+  chat; a no or no answer leaves the assistant to offer it once later.
 - **Household.** Does anyone else in the household run OPPA? If so, their name
   and their assistant's name.
 - **Channel.** Should the assistant answer on iMessage? It needs its own Apple ID
@@ -114,8 +128,9 @@ Ask these together, with defaults filled in from what you can see:
 - **Slack and other agents (optional).** Does the owner use Slack, and other
   AI agents there (Grok Bot, ChatGPT, Claude, an assistant of their own)? If
   so, step 10 sets up a room where the assistant can hand them work.
-- **Dashboard (recommended).** A page on this Mac for web chat, scheduled jobs,
-  access, the assistant's personality and rules, people, and the instance's health.
+- **Dashboard (recommended).** A page on this Mac for web chat, the assistant's
+  soul (name, face, personality), memory (about them, rules, people), scheduled
+  jobs, access, and the instance's health.
 - **Accounts.** Mail, calendar, files, brokerage and anything else come from the
   harness itself, not from OPPA: whatever the owner connects in Claude
   (claude.ai Settings, Connectors, or `claude mcp add`) or Codex (its apps and
@@ -153,6 +168,46 @@ Ask these together, with defaults filled in from what you can see:
   effort unless they name others (`--model`, `--effort low|medium|high|xhigh|max`).
   Hard work goes to a high-effort subagent either way.
 - **Driver**, only if the setup agent is unknown or the owner wants a different one.
+
+## The face
+
+Start the drawing as soon as the owner answers, so it runs while OPPA builds.
+Check what this Mac has, in this order. Never spend money without asking.
+
+1. **Codex signed in with ChatGPT** (`codex login status` says ChatGPT). It
+   draws on the owner's plan, at no extra cost. Run it in the background:
+
+   ```sh
+   faces=$(mktemp -d)
+   nohup codex exec --skip-git-repo-check --sandbox workspace-write -C "$faces" \
+     "Use your image tool to draw four different avatar options for an assistant called NAME: LOOK. Each one: a single centered subject, no text or letters, a plain or soft background, clear at 64 pixels, square. Copy them into this folder as face-1.png to face-4.png." \
+     > "$faces/codex.log" 2>&1 &
+   ```
+
+   Each picture takes a few minutes, and pictures count against the plan's
+   own image limit. If Codex refuses for a limit, say so and offer a picture.
+
+   With Claude as the driver, also register Codex as a second agent (step 5),
+   so the assistant can draw new looks later and hand computer use to Codex.
+2. **An OpenAI image key in the owner's 1Password vault**, only if they already
+   keep one there: draw the four with the OpenAI Images API, after telling them
+   the price per round.
+3. **Neither.** Say: "To draw, I need Codex with your ChatGPT plan, or an image
+   API key. Want to add one now? I can also use a picture you like." Installing
+   Codex is the Codex check in step 2. Otherwise use their picture, or none.
+
+When the four are ready, show them side by side
+(`open -a Preview "$faces"/face-*.png`) and ask for a number. "None of these"
+gets one more round, with what to change in the request. After the build, make
+the chosen picture the face; it is squared and kept beside the vault:
+
+```sh
+$B soul avatar "$faces/face-2.png"
+```
+
+Keep the look in words for the soul (step 5). Never hold setup for the drawing:
+if the faces are not ready by step 9, the first message goes out without one,
+and the face follows when the owner picks.
 
 ## 4. Build, create and prove a reply
 
@@ -205,6 +260,17 @@ command = ["/usr/bin/python3", "R/adapters/apple.py"]
 timeout_seconds = 60
 ```
 
+With Claude as the driver and Codex signed in with ChatGPT, also register Codex,
+for drawing and computer use:
+
+```toml
+[[agents]]
+id = "codex"
+family = "openai"
+command = ["python3", "R/adapters/codex.py"]
+timeout_seconds = 120
+```
+
 For the assistant to propose changes to itself on a `self/` branch (full access
 only), also add a top-level `source = "/path/to/this/checkout"` line above every
 table.
@@ -220,10 +286,22 @@ git -C ~/.oppa-private add config.toml
 git -C ~/.oppa-private commit -m "Configure channels and connections"
 ```
 
-Give the assistant its name and voice, and its onboarding note. Fill `NAME`
-and `OWNER` (the owner's first name) in the chosen preset, or write their own
-description in the same shape, and in `onboarding.md`; both are in this skill's
-folder. If someone else in the household runs OPPA, add this item to the note:
+Write who the assistant is, who the owner is, and the onboarding note. In the
+chosen preset from `resources/souls/` (or their own description in the same
+shape), fill `NAME`, `OWNER` (the owner's first name), `LOOK` (the look in
+words, or "no face yet") and `LANGUAGES` (what they said, or "not chosen yet").
+That is `soul.md`. For `profile.md`, the owner's own profile, write what setup
+learned under their first name: who is in the household, and an empty "How
+OWNER likes things done" heading for the assistant to fill. Fill `onboarding.md`
+from this skill's folder the same way. If the owner said yes to bringing in
+what Claude Code and Codex remember, replace its item that offers that with:
+
+```markdown
+- OWNER said yes at setup to bringing in what Claude Code and Codex remember:
+  call memory.import with your first reply, and say you are reading it.
+```
+
+If someone else in the household runs OPPA, add this item to the note:
 
 ```markdown
 - PARTNER also runs OPPA, with an assistant called PARTNER_ASSISTANT. When
@@ -233,17 +311,20 @@ folder. If someone else in the household runs OPPA, add this item to the note:
   family get OWNER's own access.
 ```
 
-Write both into the vault:
+Write the three into the vault. `OWNER_ID` is the owner's id in the
+configuration (`owner = ...`):
 
 ```sh
 rev=$($B memory revision)
-$B memory put assistant/persona.md --file persona.md --expected-revision "$rev" --reason "Name and voice chosen at setup" --source setup
+$B memory put assistant/soul.md --file soul.md --expected-revision "$rev" --reason "Name, look and personality chosen at setup" --source setup
+rev=$($B memory revision)
+$B memory put people/OWNER_ID/profile.md --file profile.md --expected-revision "$rev" --reason "Who the owner is, from setup" --source setup
 rev=$($B memory revision)
 $B memory put assistant/onboarding.md --file onboarding.md --expected-revision "$rev" --reason "Getting to know the owner" --source setup
 ```
 
-Do not run `memory sync` here: the assistant offers that import in chat, and it
-runs in the background once the owner says yes.
+Do not run `memory sync` here: the import runs in the background, in chat, once
+the owner has said yes.
 
 With iMessage, do not run `connectors test --prompt` from the terminal: the
 terminal's access is not the service's, and step 7 asks macOS on the service's
@@ -277,6 +358,15 @@ printf %s ~/.oppa/bin/oppa-launch | pbcopy
 Tell them: "Drag `oppa-launch` from the Finder window into the Full Disk Access
 list, or click +, press Cmd-Shift-G and paste. Then make sure its switch is on."
 Wait until they say it is done.
+
+**Owner click: the face in Messages (iMessage with a face only).** Messages on
+this Mac is signed in to the assistant's Apple ID. Open Messages, then
+Settings, and find Share Name and Photo; reveal the face with
+`open -R ~/.oppa-private/avatar.png`. Tell them: "Set the name to NAME, drag
+the picture onto the photo, and share with Contacts only." Check the labels on
+the screen before you name them: they move between macOS versions. Family
+phones then offer to show the face. The assistant also sends its own contact
+card with its first reply.
 
 ## 7. Let macOS ask, as the service
 
@@ -324,7 +414,8 @@ them to click OK.
 Done means a reply reached their phone and the history shows it delivered.
 Anything short of that, say plainly what is missing.
 
-That first reply introduces the assistant by name and asks which language to
+That first reply introduces the assistant by name, carries its contact card
+(its name, face and address, saved with one tap), and asks which language to
 use. Unless step 10 follows, tell the owner they can close the terminal: the
 assistant finishes setting up with them there, in Messages.
 
@@ -337,6 +428,9 @@ read their answers. Do this only if the owner said yes in step 3.
    follow its `next`. It prints a link that creates the app. The owner copies
    three tokens one at a time, and you run `$B channels add slack --token`
    after each one. Tokens go through the clipboard, never through a chat.
+   With a face, the owner uploads it as the app icon on the app's Basic
+   Information page (Display Information); Slack has no API for that. Reveal
+   it with `open -R ~/.oppa-private/avatar.png`.
 2. **A room.** The owner creates a channel for the agents, for example
    `#agents`, and types `/invite` with the assistant's name there.
 3. **Each agent in Slack.** In each agent's own app, the owner connects it to
@@ -363,7 +457,14 @@ read their answers. Do this only if the owner said yes in step 3.
    (one owner's ChatGPT allowed 6 scheduled runs an hour, so 10).
 5. **Tell the assistant.** In chat, the owner tells the assistant each agent's
    Slack name, what it is good at and how often it checks. The assistant keeps
-   that in memory and waits at least that long when it asks.
+   that in memory and waits at least that long when it asks. Add this item to
+   the onboarding note:
+
+   ```markdown
+   - OWNER's other agents in the Slack room may know OWNER well. Offer once to
+     ask them, with the prompt in the item about other assistants, and keep
+     the lasting facts from their answers, each with the agent and the date.
+   ```
 6. **Test.** The owner asks the assistant to have one agent do something
    small. Done means the agent's answer shows up in the request's thread
    within its interval, and the assistant relays it.
@@ -407,6 +508,26 @@ time later when they ask.
 
 To turn it off, the owner runs `csrutil enable` the same way in step 2. The
 assistant goes back to words only.
+
+## Upgrading to the soul note
+
+Since 2026-11-07 every chat reads three notes: `assistant/soul.md` (who the
+assistant is), the owner's profile `people/OWNER_ID/profile.md` (who they are
+and how they like things done) and `assistant/rules.md`. An older instance has
+`assistant/persona.md` instead, and may keep preferences in it or in other
+notes that no chat reads. With the owner present, read those notes and move
+them, with `memory put` and `memory delete` against the current revision:
+
+1. Write `assistant/soul.md` from the closest preset, keeping the name, voice
+   and languages the old persona gave. Ask the owner only what you cannot read.
+2. Move standing preferences (units, calendars, how they like things done)
+   into the owner's profile under "How OWNER likes things done", with their
+   sources and dates.
+3. Delete `assistant/persona.md` and any preferences note you emptied, and
+   update `index.md`. Fix any skill that names a note you moved.
+
+Keep `assistant/rules.md` where it is: schedules may name it. Every chat starts
+a fresh session once afterwards, with its recent history, as after any release.
 
 ## Switching the driver after setup
 
@@ -466,6 +587,8 @@ Tell the owner:
 - **Memory:** OPPA's memory is the source of truth. Once the owner says yes to
   importing what Claude Code and Codex remember, it takes in what they learn
   each day at 03:30 and asks about anything that disagrees.
-- **Name and voice:** just ask ("call yourself Mimi", "be more casual").
+- **Name, personality and look:** just ask ("call yourself Mimi", "be more
+  casual", "new look: a watercolor fox"), or edit them on the dashboard's Soul
+  page. Only the owner can change them.
 - **Knowledge:** "digest this article" keeps it, cited, in the knowledge wiki at
   `~/.oppa-private/knowledge`, apart from personal memory.

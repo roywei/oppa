@@ -1917,9 +1917,10 @@ def onboarding_checks(inst: Instance, config: Path):
     set_access(inst, "computer")
     skill = REPO / ".agents" / "skills" / "setup-oppa"
     name, owner = "Juniper", "Sam"
-    for path, source in (("assistant/persona.md", skill / "personas" / "warm-friend.md"),
+    for path, source in (("assistant/soul.md", REPO / "resources" / "souls" / "warm-friend.md"),
                          ("assistant/onboarding.md", skill / "onboarding.md")):
-        text = source.read_text().replace("NAME", name).replace("OWNER", owner)
+        text = (source.read_text().replace("NAME", name).replace("OWNER", owner)
+                .replace("LOOK", "no face yet").replace("LANGUAGES", "not chosen yet"))
         (inst.root / "note.md").write_text(text)
         revision = inst.run(feature, "00-revision", "memory", "revision").stdout.strip()
         inst.run(feature, f"00-put-{Path(path).stem}", "memory", "put", path, "--file", str(inst.root / "note.md"),
@@ -1965,7 +1966,7 @@ def onboarding_checks(inst: Instance, config: Path):
         onboarding = note("assistant/onboarding.md").lower()
         grades["language_item_dropped"] = int("language" not in onboarding)
         grades["other_items_kept"] = int("household" in onboarding and "claude code" in onboarding)
-        grades["language_kept_in_persona"] = int("english" in note("assistant/persona.md").lower())
+        grades["language_kept_in_soul"] = int("english" in note("assistant/soul.md").lower())
         yes_index = len(channels.sends("a", "owner-dm"))
         say("03-import-yes", "Yes, please bring in what Claude Code and Codex already remember about me.")
         marker = inst.root / "runtime" / "memory-import.json"

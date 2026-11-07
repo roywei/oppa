@@ -145,6 +145,7 @@ pub struct Capabilities {
     pub threads: bool,
     pub reactions: bool,
     pub typing: bool,
+    pub contact_cards: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -377,6 +378,27 @@ impl ChannelClient {
         .await
     }
 
+    /// The assistant's contact card, named `name`, with `face` as its photo
+    /// when there is one. The adapter adds the address the chat reaches the
+    /// assistant at. A channel that never said it takes cards is not asked.
+    pub async fn contact_card(
+        &self,
+        native_conversation: &str,
+        name: &str,
+        face: Option<&Attachment>,
+    ) -> DeliveryObservation {
+        if !self.capabilities.contact_cards {
+            return DeliveryObservation::ConfirmedNotSent {
+                evidence: "This channel does not take contact cards.".into(),
+            };
+        }
+        self.deliver(
+            "contact",
+            json!({"conversation":native_conversation,"name":name,"photo":face.map(|face| &face.path)}),
+        )
+        .await
+    }
+
     /// The typing bubble, on a channel that says it shows one. Nothing is
     /// claimed from it, so its outcome is ignored.
     pub async fn typing(&self, native_conversation: &str, on: bool) {
@@ -535,20 +557,25 @@ impl Deliver for ChannelDelivery {
             .and_then(|event| event.native_id);
         let client = self.client.clone();
         let conversation = self.native_conversation.clone();
-        let reaction = entry.event.kind == "reaction";
+        let kind = entry.event.kind.clone();
         let body = entry.event.body.clone();
         let attachments = entry.event.attachments.clone();
         async move {
-            if !reaction {
-                return Ok(client
-                    .send_message(&conversation, &body, reply_to.as_deref(), &attachments)
-                    .await);
-            }
-            Ok(match reply_to {
-                Some(target) => client.react(&conversation, &target, &body).await,
-                None => DeliveryObservation::ConfirmedNotSent {
+            Ok(match (kind.as_str(), reply_to) {
+                ("reaction", Some(target)) => client.react(&conversation, &target, &body).await,
+                ("reaction", None) => DeliveryObservation::ConfirmedNotSent {
                     evidence: "The message to react to has no channel id.".into(),
                 },
+                ("contact", _) => {
+                    client
+                        .contact_card(&conversation, &body, attachments.first())
+                        .await
+                }
+                (_, reply_to) => {
+                    client
+                        .send_message(&conversation, &body, reply_to.as_deref(), &attachments)
+                        .await
+                }
             })
         }
     }

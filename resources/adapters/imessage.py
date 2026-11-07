@@ -24,11 +24,16 @@ and is refused as not sent while it is down. Text works the same either way. Onl
 the six classic tapbacks: imsg cannot send a custom emoji one. A tapback is a
 receipt only once history shows a new reaction of ours of that kind on the message.
 
+A contact card (`contact`) is a vCard the adapter writes at send time: the name
+the host gives, the face the host attaches, and the address this chat reaches
+the account at, as Messages records it for the chat. It needs no bridge.
+
 Usage: imessage.py --state DIR [--imsg PATH] [--db PATH] [--overlap N] [--edit-poll SECONDS] [--launch-bridge]
 Requires imsg 0.15 or later and Full Disk Access for the process running it.
 """
 
 import argparse
+import base64
 import collections
 import json
 import math
@@ -200,6 +205,8 @@ class Adapter:
         self.reread_error = None
         # Chat GUID -> chat.db row id, which imsg's history reads by.
         self.chat_ids = {}
+        # Chat GUID -> the address of ours that chat reaches, from Messages.
+        self.addresses = {}
         self.tapbacks = self.typing_ok = False
         self.bridge_up = None
         # Cleared while `imsg launch` restarts Messages.
@@ -235,7 +242,7 @@ class Adapter:
             if method == "shutdown":
                 break
             handler = {"initialize": self.initialize, "send": self.send, "react": self.react, "typing": self.typing,
-                       "health": self.health}.get(method)
+                       "contact": self.contact, "health": self.health}.get(method)
             if handler is None:
                 if request_id is not None:
                     self.reply(request_id, error={"code": -32601, "message": "unknown method"})
@@ -273,7 +280,8 @@ class Adapter:
         else:
             self.reread_error = "imsg has no messages.history; edits are seen only after a restart"
         return {"protocol_version": PROTOCOL_VERSION,
-                "capabilities": {"attachments": True, "receipts": True, "threads": False, "reactions": self.tapbacks, "typing": self.typing_ok}}
+                "capabilities": {"attachments": True, "receipts": True, "threads": False, "reactions": self.tapbacks, "typing": self.typing_ok,
+                                 "contact_cards": True}}
 
     def bridge(self, status):
         """Tapbacks and typing go through imsg's helper inside Messages, which needs
@@ -430,14 +438,55 @@ class Adapter:
             known = self.chat_ids.get(chat)
         if known is not None:
             return known
+        self.list_chats()
+        with self.flow:
+            return self.chat_ids.get(chat)
+
+    def list_chats(self):
         result = self.imsg.call("chats.list", {"limit": 500}, timeout=30)
         for row in (result or {}).get("chats") or []:
             if isinstance(row, dict) and isinstance(row.get("id"), int):
                 with self.flow:
                     self.chat_ids[row.get("guid")] = row["id"]
                     self.chat_ids[row.get("identifier")] = row["id"]
+                    address = own_address(row)
+                    if address:
+                        self.addresses[row.get("guid")] = address
+
+    def contact(self, params):
+        """The account's contact card in a chat: the name the host gives, the face
+        it attaches, and the address this chat reaches us at, so one tap saves it."""
+        chat, name, photo = params.get("conversation"), params.get("name"), params.get("photo")
+        if not bounded(chat) or not isinstance(name, str) or not name.strip() or len(name) > 128:
+            raise AdapterFailure(NOT_SENT, "no conversation or name for the card")
         with self.flow:
-            return self.chat_ids.get(chat)
+            address = self.addresses.get(chat)
+        if address is None:
+            self.list_chats()
+            with self.flow:
+                address = self.addresses.get(chat)
+        if not address:
+            raise AdapterFailure(NOT_SENT, "Messages records no address of ours for this chat")
+        folder = tempfile.mkdtemp(prefix="card-", dir=self.cards())
+        path = os.path.join(folder, card_filename(name) + ".vcf")
+        with open(path, "w", encoding="utf-8", newline="") as card:
+            card.write(vcard(name.strip(), address, photo if isinstance(photo, str) else None))
+        return self.send({"conversation": chat, "attachments": [{"path": path}]})
+
+    def cards(self):
+        """Where cards wait to be sent; a day old, they go."""
+        folder = os.path.join(self.options.state, "cards")
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        cutoff = time.time() - 24 * 3600
+        for entry in os.scandir(folder):
+            try:
+                if entry.is_dir() and entry.stat().st_mtime < cutoff:
+                    for inner in os.scandir(entry.path):
+                        os.unlink(inner.path)
+                    os.rmdir(entry.path)
+            except OSError:
+                pass
+        return folder
 
     def typing(self, params):
         """The typing bubble, while the host composes a reply. Best effort: a
@@ -664,6 +713,60 @@ def normalize(message):
     if bounded(message.get("created_at")):
         event["at"] = message["created_at"]
     return event
+
+
+def own_address(row):
+    """The address of ours a chat reaches: the handle the other side wrote to,
+    else the account's login ("E:" an email, "P:" a phone number)."""
+    for value in (row.get("last_addressed_handle"), row.get("account_login")):
+        if isinstance(value, str):
+            kind, colon, rest = value.partition(":")
+            address = (rest if colon and kind.lower() in ("e", "p") else value).strip()
+            if address and len(address) <= 256:
+                return address
+    return None
+
+
+def card_filename(name):
+    """A file name Messages shows for the card: the name, without path characters."""
+    cleaned = "".join(c for c in name if c.isalnum() or c in " ._-").strip(" .")
+    return cleaned[:64] or "contact"
+
+
+def vcard(name, address, photo):
+    """A vCard 3.0 for one name and address, with the face as a JPEG of at most
+    512 pixels when sips can make one; a card without a face still saves."""
+    def escape(text):
+        return text.replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;").replace("\n", "\\n")
+    lines = ["BEGIN:VCARD", "VERSION:3.0", "N:;" + escape(name) + ";;;", "FN:" + escape(name)]
+    if "@" in address:
+        lines.append("EMAIL;TYPE=INTERNET:" + address)
+    else:
+        lines.append("TEL;TYPE=CELL:" + address)
+    face = jpeg(photo) if photo else None
+    if face:
+        lines.append(fold("PHOTO;ENCODING=b;TYPE=JPEG:" + base64.b64encode(face).decode("ascii")))
+    lines.append("END:VCARD")
+    return "\r\n".join(lines) + "\r\n"
+
+
+def fold(line, width=75):
+    """vCard lines longer than 75 characters continue on lines that start with a space."""
+    parts = [line[:width]]
+    parts += [" " + line[start:start + width - 1] for start in range(width, len(line), width - 1)]
+    return "\r\n".join(parts)
+
+
+def jpeg(photo):
+    try:
+        with tempfile.TemporaryDirectory() as folder:
+            out = os.path.join(folder, "face.jpg")
+            subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "75", "-Z", "512", photo, "--out", out],
+                           check=True, capture_output=True, timeout=30)
+            with open(out, "rb") as face:
+                return face.read()
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 def bridge_ready(status):

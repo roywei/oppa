@@ -15,6 +15,7 @@ mod messages;
 mod people;
 mod permission;
 mod schedules;
+mod soul;
 mod tasks;
 mod wakes;
 
@@ -292,6 +293,7 @@ impl Broker {
         tools.extend(schedules::definitions(&self.launch.grant, &context));
         tools.extend(wakes::definitions(&self.launch.grant, &context));
         tools.extend(messages::definitions(&self.launch.grant, &context));
+        tools.extend(soul::definitions(&self.launch.grant, &context));
         tools.extend(people::definitions(self.people_reach(), &context));
         tools.extend(self.connector_definitions(&context));
         tools.extend(permission::definitions(self.launch.grant.access));
@@ -331,6 +333,8 @@ impl Broker {
                 "wakes.cancel" => self.wake_cancel(parse(args)?),
                 "messages.send" => self.message_send(parse(args)?),
                 "messages.react" => self.message_react(parse(args)?),
+                "messages.contact_card" => self.contact_card(parse(args)?),
+                "soul.avatar" => self.soul_avatar(parse(args)?),
                 "messages.ask_owner" => self.ask_owner(parse(args)?),
                 "people.list" => self.people_list(parse(args)?),
                 "people.propose" => self.people_propose(parse(args)?),

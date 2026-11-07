@@ -146,6 +146,12 @@ enum Commands {
         #[command(subcommand)]
         command: Option<SettingsCommand>,
     },
+    /// Show who the assistant is (its soul note, its face and the personality
+    /// presets), or give it a new face.
+    Soul {
+        #[command(subcommand)]
+        command: Option<SoulCommand>,
+    },
     /// Start the knowledge wiki, or link one the owner already keeps.
     Knowledge {
         #[arg(long)]
@@ -298,6 +304,13 @@ enum SettingsCommand {
         #[arg(value_enum)]
         level: harness::Access,
     },
+}
+
+#[derive(Subcommand)]
+enum SoulCommand {
+    /// Make a picture the assistant's face: its centered square, 1024 pixels
+    /// on a side. The face it replaces is kept beside it.
+    Avatar { file: PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -715,6 +728,15 @@ async fn main() -> Result<()> {
                 }
             }
         }
+        Commands::Soul { command } => {
+            if let Some(SoulCommand::Avatar { file }) = command {
+                oppa::soul::set_avatar(&paths, &file)?;
+            }
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&oppa::soul::show(&paths))?
+            );
+        }
         Commands::Knowledge { link } => {
             let config = paths.load()?;
             ensure!(
@@ -926,7 +948,7 @@ fn settings(paths: &Paths, config: &Config) -> serde_json::Value {
         "knowledge":knowledge.is_dir().then(|| knowledge.canonicalize().unwrap_or(knowledge)),
         "skills":oppa::prompt::skill_index(&paths.skills()),
         "source":config.source,
-        "notes":{"persona":"assistant/persona.md","rules":"assistant/rules.md"}})
+        "notes":{"soul":oppa::soul::NOTE,"about_you":format!("people/{}/profile.md", config.owner),"rules":"assistant/rules.md"}})
 }
 
 async fn chat_once(
@@ -1197,7 +1219,7 @@ fn initialize(
     fs::write(paths.config_file(), toml::to_string_pretty(&config)?)?;
     fs::write(
         paths.private.join(".gitignore"),
-        "/vault/\n/knowledge\n.env*\n*.key\n*.pem\n",
+        "/vault/\n/knowledge\n/avatar.png\n/avatars/\n.env*\n*.key\n*.pem\n",
     )?;
     fs::create_dir(paths.private.join("evals"))?;
     git(paths, &["init", "--template=", "-b", "main"])?;

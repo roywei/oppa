@@ -295,9 +295,10 @@ fn sweep(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The owner's notes that stand in every session, bounded: the household and
-/// owner profiles, and the owner's instructions for the assistant, its persona
-/// and its rules (groups, friends, what may be shared, pre-approved actions).
+/// The notes that stand in every session, bounded, soul first: who the
+/// assistant is, who the owner is and how they like things done (the profile
+/// the manual has the model keep for every person), and the owner's rules
+/// (groups, friends, what may be shared, pre-approved actions).
 /// Read without the committer lock, so recording a message never waits on or
 /// fails with the vault; a note the vault refuses to read is reported to the
 /// model instead of failing the turn.
@@ -305,9 +306,8 @@ pub(crate) fn profiles(paths: &Paths, owner: &str) -> Vec<serde_json::Value> {
     notes(
         paths,
         [
-            "household/profile.md".to_string(),
-            format!("people/{owner}/private/profile.md"),
-            "assistant/persona.md".to_string(),
+            crate::soul::NOTE.to_string(),
+            format!("people/{owner}/profile.md"),
             "assistant/rules.md".to_string(),
         ],
     )

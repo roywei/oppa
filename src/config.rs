@@ -10,7 +10,7 @@ use std::{
 /// Sources that shape what a model sees or may call. A change to any of them
 /// invalidates cached native sessions; tests/policy.rs checks that every broker
 /// tool family is listed.
-pub const POLICY_SOURCES: [(&str, &str); 16] = [
+pub const POLICY_SOURCES: [(&str, &str); 17] = [
     ("harness.rs", include_str!("harness.rs")),
     ("runtime.rs", include_str!("runtime.rs")),
     ("prompt.rs", include_str!("prompt.rs")),
@@ -23,6 +23,7 @@ pub const POLICY_SOURCES: [(&str, &str); 16] = [
     ("broker/schedules.rs", include_str!("broker/schedules.rs")),
     ("broker/messages.rs", include_str!("broker/messages.rs")),
     ("broker/people.rs", include_str!("broker/people.rs")),
+    ("broker/soul.rs", include_str!("broker/soul.rs")),
     ("broker/wakes.rs", include_str!("broker/wakes.rs")),
     ("connectors.rs", include_str!("connectors.rs")),
     ("launch.rs", include_str!("launch.rs")),
@@ -305,6 +306,14 @@ impl Paths {
     /// to one the owner already keeps.
     pub fn knowledge(&self) -> PathBuf {
         self.private.join("knowledge")
+    }
+    /// The assistant's face, beside the vault, which takes only Markdown notes.
+    pub fn avatar(&self) -> PathBuf {
+        self.private.join("avatar.png")
+    }
+    /// Faces it had before, named by when each was replaced.
+    pub fn avatars(&self) -> PathBuf {
+        self.private.join("avatars")
     }
     pub fn database(&self) -> PathBuf {
         self.runtime.join("state.db")

@@ -16,6 +16,7 @@ pub mod prompt;
 pub mod runtime;
 pub mod schedule;
 pub mod service;
+pub mod soul;
 pub mod store;
 pub mod tasks;
 pub mod vault;

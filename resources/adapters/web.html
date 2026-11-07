@@ -221,6 +221,17 @@ textarea { line-height: 1.5; resize: vertical; }
 .missing .actions { justify-content: center; }
 .note-status { color: var(--muted); font-size: 13px; }
 .path { color: var(--muted); font: 13px var(--mono); overflow-wrap: anywhere; }
+.soul { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: start; }
+.face { display: grid; justify-items: center; gap: 10px; text-align: center; }
+.face img, .face .initials { width: 140px; height: 140px; border-radius: 50%; object-fit: cover; background: var(--surface-2); }
+.face .initials { display: grid; place-items: center; font-size: 52px; font-weight: 600; color: var(--accent); }
+.face p { margin: 0; color: var(--muted); font-size: 13px; }
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.preset { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); text-align: left; cursor: pointer; color: var(--text); font: inherit; }
+.preset:hover { background: var(--surface-2); }
+.preset span { color: var(--muted); font-size: 13px; }
+.section-title { margin: 22px 0 10px; font-size: 17px; }
+.brand img.mark { border-radius: 8px; object-fit: cover; }
 .people { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
 .people-list { display: grid; gap: 2px; }
 .person { display: grid; gap: 2px; width: 100%; padding: 10px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }
@@ -262,7 +273,7 @@ pre.output { margin: 0 0 12px; padding: 12px 14px; overflow-x: auto; background:
   .conversation-head { padding: 10px 12px; }
   .messages { padding: 14px 12px; }
   .msg { max-width: 92%; }
-  .levels, .people { grid-template-columns: minmax(0, 1fr); }
+  .levels, .people, .soul { grid-template-columns: minmax(0, 1fr); }
   .table.stack thead { display: none; }
   .table.stack tr { display: block; padding: 8px 0; border-bottom: 1px solid var(--border); }
   .table.stack tr:last-child { border-bottom: 0; }
@@ -504,7 +515,7 @@ function markdown(source, documentWraps) {
 
 // Shell -------------------------------------------------------------------------
 
-const TABS = [['chat', 'Chat'], ['schedules', 'Schedules'], ['access', 'Access'], ['personality', 'Personality'], ['rules', 'Rules'], ['people', 'People'], ['health', 'Health']];
+const TABS = [['chat', 'Chat'], ['soul', 'Soul'], ['memory', 'Memory'], ['schedules', 'Schedules'], ['access', 'Access'], ['health', 'Health']];
 const app = {session: null, tab: null, dirty: null};
 
 function setLink(ok) {
@@ -1020,19 +1031,36 @@ function viewAccess(view) {
 // Notes -------------------------------------------------------------------------
 
 const TEMPLATES = {
-  persona: [
-    '# Persona',
+  soul: [
+    '# Soul',
     '',
     '<!-- Starter template. Every line below is an example: replace it with your own words, then save. -->',
     '',
-    'How the assistant sounds and behaves with me.',
+    'Name: OPPA',
+    'Look: no face yet',
+    'Languages: the language each person writes in',
     '',
-    '- Tone: warm and direct. Short sentences, no filler.',
-    '- Language: answer in the language I write in.',
-    '- Length: a line or two for simple questions; more only when I ask.',
-    '- Humour: light, never at anyone\'s expense.',
-    '- When unsure: ask one clear question, then wait.',
-    '- Avoid: emoji, exclamation marks and status jargon.',
+    'You are OPPA, my assistant; introduce yourself by that name.',
+    '',
+    '## Personality',
+    '',
+    'Sound like a sharp chief of staff: clear, brief and a step ahead. Lead with the',
+    'answer, then the one thing worth doing next. Warm, never chatty.',
+    '',
+  ].join('\n'),
+  aboutYou: [
+    '# About me',
+    '',
+    '<!-- Starter template: replace each line with what is true, then save. -->',
+    '',
+    '- Name, and what to call me:',
+    '- Where I live, and my time zone:',
+    '- Family and the people I mention most:',
+    '',
+    '## How I like things done',
+    '',
+    '- Units, calendars and formats:',
+    '- How long answers should be:',
     '',
   ].join('\n'),
   rules: [
@@ -1070,7 +1098,7 @@ const TEMPLATES = {
   ].join('\n'),
 };
 
-function noteEditor(path, template, onSaved) {
+function noteEditor(path, template, onSaved, expose) {
   const status = h('span', {class: 'note-status'});
   const area = h('textarea', {class: 'editor', spellcheck: 'true', 'aria-label': path});
   const notice = h('div', {class: 'notice', role: 'alert', hidden: true});
@@ -1144,26 +1172,113 @@ function noteEditor(path, template, onSaved) {
   area.addEventListener('input', changed);
   save.addEventListener('click', store);
   discard.addEventListener('click', () => { notice.hidden = true; fill(loaded); });
+  if (expose) expose({put: begin, text: () => (body.contains(area) ? area.value : '')});
   load();
   return h('div', {class: 'card'}, h('div', {class: 'card-head'}, h('code', {class: 'path', text: path}), status), notice, body,
     h('div', {class: 'actions'}, discard, save));
 }
 
-function viewPersonality(view) {
-  view.append(pageHead('Personality', 'How the assistant sounds and behaves: tone, language, length, what to avoid. Plain words are enough.'),
-    noteEditor('assistant/persona.md', TEMPLATES.persona));
+// The face shows in the header wherever the page is.
+async function showFace() {
+  try {
+    const {soul} = await api('/api/soul');
+    const mark = $('.brand .mark');
+    if (!soul.face || !mark) return;
+    const img = h('img', {class: 'mark', alt: '', src: '/api/soul/face?v=' + encodeURIComponent(soul.face_version)});
+    mark.replaceWith(img);
+  } catch (_) { /* the brand mark stays */ }
 }
 
-function viewRules(view) {
-  view.append(pageHead('Rules', 'How to act in groups and with friends, what may be shared with whom, and which actions are pre-approved, for example “pay utility bills under $200 without asking”.'),
-    noteEditor('assistant/rules.md', TEMPLATES.rules));
+// A picture the owner picks, as a square PNG of at most 1024 pixels, in base64.
+function squareFace(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const picture = new Image();
+    picture.onload = () => {
+      const side = Math.min(picture.naturalWidth, picture.naturalHeight);
+      const size = Math.min(1024, side);
+      const canvas = h('canvas', {width: size, height: size});
+      canvas.getContext('2d').drawImage(picture, (picture.naturalWidth - side) / 2, (picture.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/png').split(',')[1]);
+    };
+    picture.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file is not a picture this browser can open.')); };
+    picture.src = url;
+  });
+}
+
+function viewSoul(view) {
+  const face = h('div', {class: 'face'}, placeholder('Loading…'));
+  const presets = h('div', {class: 'presets'});
+  let editor = null;
+  view.append(
+    pageHead('Soul', 'Who the assistant is: its name, face, languages and how it sounds. Change it here, or ask in chat: “call yourself Mimi”, “be more playful”, “new look: a watercolor fox”.'),
+    h('div', {class: 'soul'},
+      h('div', {class: 'card'}, face),
+      h('div', {},
+        h('div', {class: 'card'}, h('h2', {class: 'section-title', style: 'margin-top:0', text: 'Start from a personality'}), presets),
+        noteEditor('assistant/soul.md', TEMPLATES.soul, null, handle => { editor = handle; }))));
+
+  // A preset changes the personality and keeps the name, look and languages.
+  function apply(preset) {
+    const current = editor ? editor.text() : '';
+    const head = current.split(/^## Personality\s*$/m)[0].trim();
+    const personality = preset.text.split(/^## Personality\s*$/m)[1] || '';
+    editor.put(head ? head + '\n\n## Personality\n' + personality : preset.text);
+    toast('Applied ' + preset.title + '. Fill in what is in capitals, then save.');
+  }
+
+  function render(soul) {
+    const upload = h('input', {type: 'file', accept: 'image/*', hidden: true});
+    const replace = h('button', {class: 'btn', type: 'button', onclick: () => upload.click()}, soul.face ? 'Replace face' : 'Add a face');
+    upload.addEventListener('change', async () => {
+      const file = upload.files[0];
+      if (!file) return;
+      replace.disabled = true;
+      try {
+        const image = await squareFace(file);
+        render((await api('/api/soul/face', {method: 'POST', body: {image}})).soul);
+        toast('Face saved. Ask the assistant in chat to send you its new contact card.');
+        showFace();
+      } catch (error) {
+        toast(error.message, 'bad');
+        replace.disabled = false;
+      }
+    });
+    face.replaceChildren(
+      soul.face ? h('img', {alt: 'The assistant’s face', src: '/api/soul/face?v=' + encodeURIComponent(soul.face_version)}) : h('div', {class: 'initials', 'aria-hidden': 'true', text: '?'}),
+      replace, upload,
+      h('p', {text: soul.earlier ? 'Earlier faces kept: ' + soul.earlier : 'Pictures become a square face of 1024 pixels.'}));
+    presets.replaceChildren(...soul.presets.map(preset => {
+      const sample = (preset.text.match(/^Sample: ([\s\S]*?)(\n\n|\n?$)/m) || [])[1] || '';
+      return h('button', {class: 'preset', type: 'button', onclick: () => apply(preset)},
+        h('strong', {text: preset.title}), h('span', {text: sample.replace(/\s+/g, ' ')}));
+    }));
+  }
+
+  api('/api/soul').then(data => render(data.soul)).catch(error => face.replaceChildren(problem(error.message)));
+}
+
+function viewMemory(view) {
+  const about = h('div', {}, placeholder('Loading…'));
+  view.append(
+    pageHead('Memory', 'What the assistant knows. Every chat reads About you and Rules; it searches the rest when it needs it. Ask in chat to add, correct or forget anything.'),
+    h('h2', {class: 'section-title', text: 'About you'}), about,
+    h('h2', {class: 'section-title', text: 'Rules'}),
+    h('p', {class: 'lede', text: 'How to act in groups and with friends, what may be shared with whom, and which actions are pre-approved, for example “pay utility bills under $200 without asking”.'}),
+    noteEditor('assistant/rules.md', TEMPLATES.rules),
+    h('h2', {class: 'section-title', text: 'People'}));
+  peopleSection(view);
+  api('/api/settings').then(({settings}) => {
+    about.replaceChildren(noteEditor(settings.notes.about_you, TEMPLATES.aboutYou));
+  }).catch(error => about.replaceChildren(problem(error.message)));
 }
 
 function slugify(name) {
   return name.trim().toLowerCase().normalize('NFKC').replace(/\s+/g, '-').replace(/[^\p{L}\p{N}._-]/gu, '').replace(/^[.-]+/, '').slice(0, 64);
 }
 
-function viewPeople(view) {
+function peopleSection(view) {
   const list = h('div', {class: 'people-list'}, placeholder('Loading…'));
   const editor = h('div', {}, h('div', {class: 'card'}, placeholder('Choose a person, or add one.')));
   const name = h('input', {type: 'text', placeholder: 'Name', 'aria-label': 'Name of a person to add'});
@@ -1171,7 +1286,7 @@ function viewPeople(view) {
   let people = [];
   let active = null;
   view.append(
-    pageHead('People', 'What the assistant knows about the people in your life: who they are to you, how to reach them and what they may be told. Each person is the vault note people/<name>/profile.md.'),
+    h('p', {class: 'lede', text: 'Who the people in your life are to you, how to reach them and what they may be told. Each person is the vault note people/<name>/profile.md.'}),
     h('div', {class: 'people'}, h('div', {class: 'card'}, h('div', {class: 'add-person'}, name, add), list), editor));
 
   async function load() {
@@ -1295,8 +1410,7 @@ function viewHealth(view) {
 }
 
 const VIEWS = {
-  chat: viewChat, schedules: viewSchedules, access: viewAccess, personality: viewPersonality, rules: viewRules, people: viewPeople,
-  health: viewHealth,
+  chat: viewChat, soul: viewSoul, memory: viewMemory, schedules: viewSchedules, access: viewAccess, health: viewHealth,
 };
 
 // Start -------------------------------------------------------------------------
@@ -1319,6 +1433,7 @@ async function start() {
   }
   const tab = saved.get('tab', '');
   openTab(TABS.some(([id]) => id === tab) ? tab : TABS[0][0]);
+  showFace();
   poll();
   setInterval(showTyping, 15000);
   window.addEventListener('beforeunload', event => { if (app.dirty) { event.preventDefault(); event.returnValue = ''; } });

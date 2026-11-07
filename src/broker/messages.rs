@@ -52,6 +52,16 @@ pub(super) struct MessageReact {
 /// The tapbacks a channel takes; iMessage names these six.
 const REACTIONS: [&str; 6] = ["love", "like", "dislike", "laugh", "emphasize", "question"];
 
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ContactCard {
+    context: String,
+    name: String,
+}
+
+/// The longest name a card carries.
+const CARD_NAME: usize = 128;
+
 /// Files one message may carry, each at most this large: what the channels
 /// take as a photo or a document.
 const FILES_PER_MESSAGE: usize = 8;
@@ -91,6 +101,7 @@ pub(super) fn definitions(grant: &RunGrant, context: &Value) -> Vec<Value> {
     // A conversation turn reacts; a delegated task or heartbeat has no one to react to.
     if grant.task_access == TaskAccess::Manage {
         tools.push(tool("messages.react", "React to a message in the current conversation with a tapback (love ❤️, like 👍, dislike 👎, laugh 😂, emphasize ‼️, question ❓), as a friend would: instead of a reply that would say only as much, or beside one. Name the message by its event_seq. A message takes one reaction from you, and the first is final, even one the channel refused: asking again returns that one. It goes out when this turn ends; a channel without reactions refuses it.", json!({"context":context,"event_seq":{"type":"integer"},"reaction":{"type":"string","enum":REACTIONS}}), &["context","event_seq","reaction"], false));
+        tools.push(tool("messages.contact_card", "Send your contact card in the current direct chat: your name, your face and the address this chat reaches you at, so the person saves you as a contact with one tap. Send it with your first reply to someone, and again after your name or face changes; the same card goes to a chat once, and asking again returns that one. Give your name as your soul gives it. It goes out when this turn ends; a channel without contact cards refuses it.", json!({"context":context,"name":{"type":"string","minLength":1,"maxLength":CARD_NAME}}), &["context","name"], false));
     }
     if grant.task_access != TaskAccess::Manage || grant.access.is_read() {
         return tools;
@@ -281,6 +292,81 @@ impl Broker {
             _ => json!({"state":"queued","meaning":"It goes out when this turn ends."}),
         };
         Ok(json!({"reaction":entry.event.body,"event_seq":entry.event.seq,"delivery":delivery}))
+    }
+
+    /// The assistant's contact card in the current direct chat, with its face
+    /// when it has one. The channel adds the address it is reached at there, so
+    /// the host never guesses it. One card per chat, name and face: the key
+    /// holds all three, and the store keeps the first queued under it.
+    pub(super) fn contact_card(&self, args: ContactCard) -> ToolCall {
+        self.authorize(&args.context)?;
+        let grant = &self.launch.grant;
+        if grant.task_access != TaskAccess::Manage {
+            return Err(denied());
+        }
+        let name = args.name.trim();
+        if name.is_empty() || name.chars().count() > CARD_NAME || name.contains(['\0', '\n', '\r'])
+        {
+            return Err(invalid());
+        }
+        let store = Store::open(&self.launch.database).map_err(|_| unavailable())?;
+        let conversation = grant
+            .conversations
+            .first()
+            .and_then(|conversation| store.conversation(conversation).ok())
+            .ok_or_else(denied)?;
+        if conversation.channel == "console" {
+            return Err(not_deliverable());
+        }
+        if conversation.kind != "dm" {
+            return Err(Fault {
+                code: "not_a_direct_chat",
+                message: "A contact card goes to one person, in their direct chat with you.",
+            });
+        }
+        if self.on_owners_account(&conversation.channel, &conversation.account) {
+            return Err(owners_account());
+        }
+        let paths = self.paths().map_err(|_| unavailable())?;
+        let face = crate::soul::avatar(&paths);
+        let face_digest = match &face {
+            Some(face) => {
+                use sha2::Digest as _;
+                let bytes = fs::read(face).map_err(|_| unavailable())?;
+                format!("{:x}", sha2::Sha256::digest(bytes))
+            }
+            None => "no face".to_owned(),
+        };
+        let key = format!(
+            "send:card:{}",
+            digest(&(&conversation.id, name, face_digest)).map_err(|_| unavailable())?
+        );
+        let receipt = self.journaled_effect("messages.contact_card", "outward", &args, || {
+            let files: Vec<String> = face
+                .iter()
+                .map(|face| face.to_string_lossy().into_owned())
+                .collect();
+            let files = self.outgoing_files(&files, &key)?;
+            let entry = store
+                .enqueue_contact(&conversation.id, &key, name, files)
+                .map_err(|_| unavailable())?;
+            Ok(json!({"outbox_id":entry.id}))
+        })?;
+        let id = receipt["receipt"]["outbox_id"]
+            .as_i64()
+            .ok_or_else(unavailable)?;
+        let entry = store.outbox_entry(id).map_err(|_| unavailable())?;
+        let delivery = match entry.state {
+            DeliveryState::Sent => json!({"state":"sent"}),
+            DeliveryState::Unknown => {
+                json!({"state":"unknown","meaning":"It may have reached them. Do not send it again."})
+            }
+            _ if entry.attempts > 0 => {
+                json!({"state":"refused","meaning":"The channel did not send it.","evidence":entry.evidence})
+            }
+            _ => json!({"state":"queued","meaning":"It goes out when this turn ends."}),
+        };
+        Ok(json!({"name":entry.event.body,"face":face.is_some(),"delivery":delivery}))
     }
 
     /// Copies of the files a message carries, where the host keeps them until

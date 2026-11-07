@@ -644,7 +644,7 @@ fn one_tab_bar_ends_with_health() {
         .find(|line| line.starts_with("const TABS = "))
         .unwrap();
     assert!(
-        tabs.ends_with("['people', 'People'], ['health', 'Health']];"),
+        tabs.ends_with("['access', 'Access'], ['health', 'Health']];"),
         "{tabs}"
     );
     assert!(
@@ -742,7 +742,7 @@ fn a_note_saved_on_the_page_is_a_dashboard_commit_and_a_newer_edit_is_kept() {
     let adapter = Standalone::start(Cli::Real);
     let page = Page::sign_in(&adapter.state());
     let vault = Vault::open(&adapter.paths.vault()).unwrap();
-    let path = "assistant/persona.md";
+    let path = "assistant/soul.md";
 
     let missing = page.get(&format!("/api/note?path={path}")).json();
     assert_eq!(
@@ -752,11 +752,11 @@ fn a_note_saved_on_the_page_is_a_dashboard_commit_and_a_newer_edit_is_kept() {
     let saved = page.write(
         "PUT",
         "/api/note",
-        json!({"path":path,"content":"# Persona\n\nSpeak plainly.","version":""}),
+        json!({"path":path,"content":"# Soul\n\nSpeak plainly.","version":""}),
     );
     assert_eq!(saved.status, 200, "{}", saved.text());
     let loaded = saved.json()["note"].clone();
-    assert_eq!(vault.read(path).unwrap(), "# Persona\n\nSpeak plainly.\n");
+    assert_eq!(vault.read(path).unwrap(), "# Soul\n\nSpeak plainly.\n");
     let receipt = &vault.history(1).unwrap()[0];
     assert_eq!(receipt.paths, [path]);
     assert_eq!(
@@ -768,7 +768,7 @@ fn a_note_saved_on_the_page_is_a_dashboard_commit_and_a_newer_edit_is_kept() {
         (OWNER, "dashboard", "Edited in the dashboard")
     );
 
-    let newer = "# Persona\n\nAnswer in Chinese.\n";
+    let newer = "# Soul\n\nAnswer in Chinese.\n";
     vault
         .commit(
             &vault.revision().unwrap(),
@@ -787,7 +787,7 @@ fn a_note_saved_on_the_page_is_a_dashboard_commit_and_a_newer_edit_is_kept() {
     let conflict = page.write(
         "PUT",
         "/api/note",
-        json!({"path":path,"content":"# Persona\n\nOverwrite it.\n","version":loaded["version"]}),
+        json!({"path":path,"content":"# Soul\n\nOverwrite it.\n","version":loaded["version"]}),
     );
     assert_eq!(conflict.status, 409, "{}", conflict.text());
     assert_eq!(conflict.json()["note"]["content"], newer);
@@ -807,6 +807,7 @@ fn a_note_saved_on_the_page_is_a_dashboard_commit_and_a_newer_edit_is_kept() {
     for path in [
         "../outside.md",
         "assistant/other.md",
+        "assistant/persona.md",
         "household/profile.md",
         "people/alex-doe/private/profile.md",
         "people/../profile.md",
@@ -982,5 +983,80 @@ fn the_web_chat_init_writes_answers_through_serve_without_edits() {
     assert_eq!(
         bodies,
         [json!("Hello from init"), json!("Reply to: Hello from init")]
+    );
+}
+
+/// A `width` by `height` PNG in base64, as the page sends a picture.
+fn picture_base64(width: u32, height: u32) -> String {
+    let script = r#"
+import base64, struct, sys, zlib
+w, h = int(sys.argv[1]), int(sys.argv[2])
+raw = b''.join(b'\x00' + bytes([40, 90, 220]) * w for _ in range(h))
+def chunk(kind, data):
+    return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b'')
+sys.stdout.write(base64.b64encode(png).decode())
+"#;
+    let output = Command::new("python3")
+        .args(["-c", script, &width.to_string(), &height.to_string()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    String::from_utf8(output.stdout).unwrap()
+}
+
+// The owner asked on 2026-11-07 for a Soul page like Muse's: the face shows,
+// a picture the owner picks becomes it through `oppa soul avatar`, and what is
+// not a picture changes nothing.
+#[test]
+fn a_face_picked_on_the_soul_page_becomes_the_square_face_it_serves() {
+    let adapter = Standalone::start(Cli::Real);
+    let page = Page::sign_in(&adapter.state());
+    let soul = page.get("/api/soul").json()["soul"].clone();
+    assert_eq!(soul["face"], false);
+    assert_eq!(
+        soul["presets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|preset| preset["title"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "Chief of staff",
+            "Warm friend",
+            "Calm and minimal",
+            "Playful"
+        ]
+    );
+    assert_eq!(page.get("/api/soul/face").status, 404);
+
+    let saved = page.write(
+        "POST",
+        "/api/soul/face",
+        json!({"image":picture_base64(48, 32)}),
+    );
+    assert_eq!(saved.status, 200, "{}", saved.text());
+    assert_eq!(saved.json()["soul"]["face"], true);
+    let face = page.get("/api/soul/face");
+    assert_eq!(face.status, 200);
+    assert_eq!(face.header("Content-Type"), Some("image/png"));
+    assert!(face.body.starts_with(b"\x89PNG"));
+    assert_eq!(fs::read(adapter.paths.avatar()).unwrap(), face.body);
+
+    let words = page.write("POST", "/api/soul/face", json!({"image":"SGVsbG8u"}));
+    assert_eq!(words.status, 400, "{}", words.text());
+    assert_eq!(
+        fs::read(adapter.paths.avatar()).unwrap(),
+        face.body,
+        "nothing changed"
+    );
+    let leftovers: Vec<_> = fs::read_dir(adapter.state())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("face-"))
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "temporary pictures remain: {leftovers:?}"
     );
 }

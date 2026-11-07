@@ -1788,14 +1788,14 @@ async fn a_child_gets_a_family_turn_with_the_owners_reach() {
         .commit(
             &vault.revision().unwrap(),
             &[oppa::vault::Edit::Write {
-                path: "assistant/persona.md".into(),
-                content: "Synthetic persona: the secret word is lantern.\n".into(),
+                path: "assistant/soul.md".into(),
+                content: "Synthetic soul: the secret word is lantern.\n".into(),
             }],
             &oppa::vault::Provenance {
                 author: "synthetic-owner".into(),
                 source: "fixture".into(),
                 run_id: "seed".into(),
-                reason: "Seed a synthetic persona".into(),
+                reason: "Seed a synthetic soul".into(),
             },
         )
         .unwrap();
@@ -1921,7 +1921,7 @@ async fn a_child_gets_a_family_turn_with_the_owners_reach() {
             "turn {index}"
         );
         if !context["profiles"].is_null() {
-            assert_eq!(context["profiles"][0]["path"], "assistant/persona.md");
+            assert_eq!(context["profiles"][0]["path"], "assistant/soul.md");
         }
     }
     let sent = fixture.sent();

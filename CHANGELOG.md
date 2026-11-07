@@ -4,6 +4,23 @@
 
 First public release.
 
+- The assistant has a soul and a face. Owners see two things: the Soul (`assistant/soul.md`: name, look,
+  languages and personality, started from one of four presets in `resources/souls/`) and Memory. Every session
+  reads three notes, soul first: the soul, the owner's own profile `people/<owner>/profile.md` (who they are and
+  how they like things done) and `assistant/rules.md`. The owner profile used to be read from
+  `people/<owner>/private/profile.md`, a path nothing wrote, so standing preferences drifted into the persona
+  note; `assistant/persona.md` and `household/profile.md` are no longer read (see the setup guide's "Upgrading to
+  the soul note"). The manual that ships with OPPA is now `resources/manual/MANUAL.md` and defers to the soul.
+  Only the owner's own turn changes the soul or the rules. The face is a picture kept beside the vault:
+  `soul.avatar` (owner turns) and `oppa soul avatar <picture>` square it at 1024 pixels and keep earlier ones.
+  `messages.contact_card` sends the assistant's contact card in a direct chat, once per name and face: the
+  iMessage adapter writes a vCard with the address Messages records for that chat and the face as its photo,
+  with no bridge needed; other channels refuse it as not sent. The dashboard's tabs are Chat, Soul (face,
+  presets, the soul note), Memory (about you, rules, people), Schedules, Access and Health. Setup asks for a
+  name, a personality and a look, draws four faces with Codex on the owner's ChatGPT plan while it builds (an
+  image key is the paid fallback, a picture or initials the free one), registers Codex beside a Claude driver,
+  and asks about importing Claude Code and Codex memory up front. The import's closing message now says what it
+  left out, and onboarding offers a paste-in prompt for other assistants.
 - iMessage tapbacks and the typing bubble, optional: both need imsg's bridge, which needs SIP off; without it
   text works as before and a tapback is refused as not sent. A turn reacts with `messages.react` (love, like, dislike,
   laugh, emphasize, question); a message takes one reaction, the first is final, and it is sent when the turn ends

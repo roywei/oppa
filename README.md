@@ -167,7 +167,8 @@ The page runs the same `oppa` that `serve` runs; `--oppa <path>` names another.
 Restart `serve`, then open the address in `<runtime>/channels/web/login-url` in
 a browser on the Mac; it sets a cookie for that browser. The page answers only
 on 127.0.0.1 and its own address and refuses writes from other sites. Its tabs
-hold chat, scheduled jobs, access, personality, rules, people and health. What
+hold chat, the assistant's soul (its name, face and personality), its memory
+(about you, rules and people), scheduled jobs, access and health. What
 the assistant could improve about itself it tells you in its morning message.
 Delete `<runtime>/channels/web/token` to sign every browser out.
 
@@ -259,11 +260,19 @@ keep (`--knowledge PATH`; `oppa knowledge --link PATH` on an existing
 instance). Ask the assistant to digest something and it is kept there, each
 claim cited with its source.
 
-How the assistant sounds and behaves, and its rules for groups, friends, what
-may be shared with whom and which actions are pre-approved, are two notes in the
-vault that reach every session: `assistant/persona.md` and
-`assistant/rules.md`. Edit them in the dashboard, with `oppa memory put`, or
-directly.
+Three notes in the vault reach every session. `assistant/soul.md` says who the
+assistant is: its name, look, languages and personality, started from a preset
+in `resources/souls/`. Your own profile, `people/<your id>/profile.md`, says who
+you are and how you like things done. `assistant/rules.md` holds the rules for
+groups, friends, what may be shared with whom and which actions are
+pre-approved. Only you change the soul and the rules. Edit them on the
+dashboard, with `oppa memory put`, or by asking ("call yourself Mimi", "be more
+playful"). The assistant's face is a picture beside the vault:
+`oppa soul avatar <picture>` sets it, keeping the ones before, and the assistant
+sends its contact card, with that face, in its first reply to each person on
+iMessage. Ask for a new look and it draws four options through Codex, when
+Codex is signed in with ChatGPT. The manual that ships with OPPA,
+`resources/manual/MANUAL.md`, is the same for every instance.
 
 For standing work, just ask: "remind me at 7 tonight", "post the briefing in the
 family group every weekday at 7". The assistant keeps a schedule in the

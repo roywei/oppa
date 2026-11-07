@@ -865,9 +865,10 @@ fn task_paths(fixture: &Fixture) -> Paths {
 #[test]
 fn delegation_binds_original_input_replays_identical_task_and_rejects_changed_payload() {
     let fixture = task_fixture(TaskAccess::Manage);
-    // History 4, memory 4, tasks 4, schedules 3, people 4, messages.react; a
-    // read run has no messages.send.
-    assert_eq!(fixture.broker.definitions().len(), 20);
+    // History 4, memory 4, tasks 4, schedules 3, people 4, messages.react and
+    // messages.contact_card, and the owner's soul.avatar; a read run has no
+    // messages.send.
+    assert_eq!(fixture.broker.definitions().len(), 22);
     let args = task_args(&fixture);
     for name in [
         "requester",
@@ -1702,4 +1703,152 @@ fn only_the_owners_own_turn_at_full_access_may_start_a_memory_import() {
     let started = success(start(&owner));
     assert_eq!(started["receipt"]["started"], true, "{started}");
     assert!(runtime.join("memory-import.json").exists());
+}
+
+/// A picture `width` by `height` pixels, written by Python, to stand in for a
+/// face someone sent.
+fn picture(dir: &Path, width: u32, height: u32) -> PathBuf {
+    let path = dir.join(format!("picture-{width}x{height}.png"));
+    let script = r#"
+import struct, sys, zlib
+w, h, out = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+raw = b''.join(b'\x00' + bytes([200, 80, 40]) * w for _ in range(h))
+def chunk(kind, data):
+    return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b'')
+open(out, 'wb').write(png)
+"#;
+    let status = Command::new("python3")
+        .args(["-c", script, &width.to_string(), &height.to_string()])
+        .arg(&path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    path
+}
+
+fn pixels(picture: &Path) -> (u32, u32) {
+    let output = Command::new("sips")
+        .args(["-g", "pixelWidth", "-g", "pixelHeight"])
+        .arg(picture)
+        .output()
+        .unwrap();
+    let text = String::from_utf8(output.stdout).unwrap();
+    let field = |name: &str| {
+        text.lines()
+            .find_map(|line| line.trim().strip_prefix(name)?.trim().parse().ok())
+            .unwrap()
+    };
+    (field("pixelWidth:"), field("pixelHeight:"))
+}
+
+#[test]
+fn only_the_owners_turn_sets_a_face_which_is_squared_and_keeps_the_one_before() {
+    // The owner asked on 2026-11-07 for a face like Muse's and Dot's: the owner's
+    // turn sets it from a picture, the host squares it, and earlier faces stay so
+    // going back is possible. Nobody else changes who the assistant is.
+    let fixture = task_fixture(TaskAccess::Manage);
+    let paths = task_paths(&fixture);
+    let dir = fixture.launch.private_dir.parent().unwrap().to_path_buf();
+    let set = |broker: &Broker, file: &Path| {
+        broker.call(
+            "soul.avatar",
+            json!({"context":fixture.launch.grant.context,"file":file}),
+        )
+    };
+    let first = success(set(&fixture.broker, &picture(&dir, 60, 40)));
+    assert_eq!(first["receipt"]["avatar"], json!(paths.avatar()));
+    assert_eq!(pixels(&paths.avatar()), (1024, 1024));
+    assert_eq!(first["receipt"]["earlier"], json!([]));
+
+    let words = dir.join("not-a-picture.png");
+    fs::write(&words, "Hello.").unwrap();
+    let before = fs::read(paths.avatar()).unwrap();
+    assert_eq!(code(set(&fixture.broker, &words)), "not_a_picture");
+    assert_eq!(fs::read(paths.avatar()).unwrap(), before, "nothing changed");
+
+    let second = success(set(&fixture.broker, &picture(&dir, 30, 50)));
+    let earlier = second["receipt"]["earlier"].as_array().unwrap();
+    assert_eq!(earlier.len(), 1);
+    assert_eq!(fs::read(earlier[0].as_str().unwrap()).unwrap(), before);
+
+    for role in [oppa::config::Role::Adult, oppa::config::Role::Child] {
+        let mut launch = fixture.launch.clone();
+        launch.grant.role = role;
+        launch.grant.run_id = format!("family-{role:?}");
+        let broker = Broker::open(launch).unwrap();
+        assert!(!broker
+            .definitions()
+            .iter()
+            .any(|tool| tool["name"] == "soul.avatar"));
+        assert_eq!(code(set(&broker, &picture(&dir, 20, 20))), "access_denied");
+    }
+}
+
+#[test]
+fn a_contact_card_goes_once_per_name_and_face_and_only_to_a_direct_chat() {
+    // The owner asked on 2026-11-07 for a contact card with the assistant's
+    // name and face, as Dot and Poke send: the first card to a chat is queued
+    // with the face, asking again returns it, a new name is a new card, and a
+    // group never gets one.
+    let fixture = task_fixture(TaskAccess::Manage);
+    let paths = task_paths(&fixture);
+    let dir = fixture.launch.private_dir.parent().unwrap().to_path_buf();
+    oppa::soul::set_avatar(&paths, &picture(&dir, 40, 40)).unwrap();
+    let store = Store::open(&fixture.launch.database).unwrap();
+    let mut inputs = std::collections::HashMap::new();
+    for (id, kind) in [
+        ("imsg/assistant/dm", "dm"),
+        ("imsg/assistant/club", "group"),
+    ] {
+        store
+            .create_conversation(id, "imsg", "assistant", id, "policy-1")
+            .unwrap();
+        store.set_conversation_shape(id, kind, None).unwrap();
+        let input = store
+            .append_inbound(&InboundEvent {
+                conversation: id.into(),
+                native_id: format!("{id}-hello"),
+                author: "synthetic-owner".into(),
+                body: "Hello.".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        inputs.insert(id, input.seq);
+    }
+    let in_chat = |conversation: &'static str, run: &str| {
+        let mut launch = fixture.launch.clone();
+        launch.grant.conversations = vec![conversation.into()];
+        launch.grant.input_seq = inputs[conversation];
+        launch.grant.run_id = run.into();
+        Broker::open(launch).unwrap()
+    };
+    let card = |broker: &Broker, name: &str| {
+        broker.call(
+            "messages.contact_card",
+            json!({"context":fixture.launch.grant.context,"name":name}),
+        )
+    };
+    let direct = in_chat("imsg/assistant/dm", "card-run");
+    let first = success(card(&direct, "Mimi"));
+    assert_eq!(
+        (&first["name"], &first["face"], &first["delivery"]["state"]),
+        (&json!("Mimi"), &json!(true), &json!("queued"))
+    );
+    let again = in_chat("imsg/assistant/dm", "card-run-again");
+    success(card(&again, "Mimi"));
+    success(card(&again, "Juniper"));
+    let cards: Vec<_> = store
+        .pending_outbox()
+        .unwrap()
+        .into_iter()
+        .filter(|entry| entry.event.kind == "contact")
+        .map(|entry| (entry.event.body, entry.event.attachments.len()))
+        .collect();
+    assert_eq!(cards, [("Mimi".into(), 1), ("Juniper".into(), 1)]);
+    assert_eq!(
+        code(card(&in_chat("imsg/assistant/club", "group-run"), "Mimi")),
+        "not_a_direct_chat"
+    );
+    assert_eq!(code(card(&direct, " ")), "invalid_arguments");
 }

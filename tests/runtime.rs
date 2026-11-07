@@ -700,7 +700,7 @@ async fn an_edited_profile_starts_a_fresh_session_with_the_new_text() {
     let profile = runtime
         .paths
         .vault()
-        .join("people/synthetic-owner/private/profile.md");
+        .join("people/synthetic-owner/profile.md");
     fs::create_dir_all(profile.parent().unwrap()).unwrap();
     for (id, text) in [
         ("one", "Dinner is at six."),
@@ -729,16 +729,30 @@ async fn an_edited_profile_starts_a_fresh_session_with_the_new_text() {
 }
 
 #[tokio::test]
-async fn the_owners_persona_and_rules_notes_reach_every_session_and_an_edit_starts_a_fresh_one() {
-    // M-4: the owner shapes the assistant with two vault notes, which the
-    // dashboard edits: how it sounds, and how it acts in groups and with friends.
-    // Both reach a fresh session whole, and an edit to either starts one.
+async fn the_soul_the_owners_profile_and_rules_reach_every_session_soul_first() {
+    // M-4: three vault notes stand in every session, which the dashboard edits:
+    // the soul (who the assistant is), the owner's own profile, at the path the
+    // manual has the model keep for every person, and the rules. Each reaches a
+    // fresh session whole, and an edit to any starts one. Notes from before the
+    // soul (persona.md, a profile under private/) are not read.
     let (dir, runtime) = fixture(|root| vec![agent(root, "first", -1, 0.0)]);
     let vault = runtime.paths.vault();
     fs::create_dir_all(vault.join("assistant")).unwrap();
+    fs::create_dir_all(vault.join("people/synthetic-owner/private")).unwrap();
     fs::write(
-        vault.join("assistant/persona.md"),
-        "Sound like a calm butler.",
+        vault.join("assistant/soul.md"),
+        "Name: Mimi. A calm butler.",
+    )
+    .unwrap();
+    fs::write(
+        vault.join("people/synthetic-owner/profile.md"),
+        "Uses Celsius.",
+    )
+    .unwrap();
+    fs::write(vault.join("assistant/persona.md"), "Sound like a pirate.").unwrap();
+    fs::write(
+        vault.join("people/synthetic-owner/private/profile.md"),
+        "Uses Fahrenheit.",
     )
     .unwrap();
     for (id, rules) in [
@@ -770,8 +784,12 @@ async fn the_owners_persona_and_rules_notes_reach_every_session_and_an_edit_star
         notes(&requests[0]),
         [
             (
-                "assistant/persona.md".into(),
-                "Sound like a calm butler.".into()
+                "assistant/soul.md".into(),
+                "Name: Mimi. A calm butler.".into()
+            ),
+            (
+                "people/synthetic-owner/profile.md".into(),
+                "Uses Celsius.".into()
             ),
             (
                 "assistant/rules.md".into(),
@@ -788,7 +806,7 @@ async fn the_owners_persona_and_rules_notes_reach_every_session_and_an_edit_star
         "an edited rules note starts a fresh session"
     );
     assert_eq!(
-        notes(&requests[2])[1].1,
+        notes(&requests[2])[2].1,
         "Share nothing about money in groups."
     );
 }
@@ -910,15 +928,15 @@ async fn an_unreadable_profile_is_reported_and_does_not_hide_the_other() {
     use oppa::runtime::{ConsoleDelivery, ConversationIdentity};
     // M-4: the vault refuses a symlinked profile. Recording messages and turns
     // continue, the model is told the profile is unreadable, and an edit to the
-    // household profile still reaches the next turn.
+    // soul still reaches the next turn.
     let (dir, runtime) = fixture(|root| vec![agent(root, "first", -1, 0.0)]);
     let vault = runtime.paths.vault();
-    fs::create_dir_all(vault.join("people/synthetic-owner/private")).unwrap();
-    fs::create_dir_all(vault.join("household")).unwrap();
+    fs::create_dir_all(vault.join("people/synthetic-owner")).unwrap();
+    fs::create_dir_all(vault.join("assistant")).unwrap();
     fs::write(dir.path().join("elsewhere.md"), "Kept outside the vault.").unwrap();
     std::os::unix::fs::symlink(
         dir.path().join("elsewhere.md"),
-        vault.join("people/synthetic-owner/private/profile.md"),
+        vault.join("people/synthetic-owner/profile.md"),
     )
     .unwrap();
     let identity = ConversationIdentity {
@@ -936,7 +954,7 @@ async fn an_unreadable_profile_is_reported_and_does_not_hide_the_other() {
         ("one", owner.as_str(), "Rule one."),
         ("two", owner.as_str(), "Rule two."),
     ] {
-        fs::write(vault.join("household/profile.md"), rule).unwrap();
+        fs::write(vault.join("assistant/soul.md"), rule).unwrap();
         runtime
             .receive(
                 &identity,
@@ -961,7 +979,7 @@ async fn an_unreadable_profile_is_reported_and_does_not_hide_the_other() {
     assert!(profiles[1].get("text").is_none());
     assert!(
         requests[1]["session"].is_null(),
-        "the household edit starts a fresh session"
+        "the soul edit starts a fresh session"
     );
     assert_eq!(context(&requests[1])["profiles"][0]["text"], "Rule two.");
 }

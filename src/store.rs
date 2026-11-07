@@ -900,6 +900,19 @@ impl Store {
         )
     }
 
+    /// The assistant's contact card: an outbound `contact` event whose body is
+    /// the name on the card and whose attachment, if any, is its face. The
+    /// channel adds the address it is reached at when it sends the card.
+    pub fn enqueue_contact(
+        &self,
+        conversation: &str,
+        idempotency_key: &str,
+        name: &str,
+        face: Vec<Attachment>,
+    ) -> Result<OutboxEntry> {
+        self.enqueue("contact", conversation, idempotency_key, name, face, None)
+    }
+
     fn enqueue(
         &self,
         kind: &str,

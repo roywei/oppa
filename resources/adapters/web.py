@@ -61,7 +61,9 @@ SCHEDULE_ID = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{0,63}")
 CLOCK = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 ACCESS = ("read", "connectors", "computer")
-NOTES = ("assistant/persona.md", "assistant/rules.md")
+NOTES = ("assistant/soul.md", "assistant/rules.md")
+# A face the page sends, already scaled down in the browser.
+MAX_FACE = 1536 * 1024
 # One folder name under people/: letters and digits in any script, spaces,
 # dots, hyphens and underscores, never a leading dot or space.
 PERSON = r"(?![. ])[\w .-]{0,63}[\w.-]"
@@ -137,6 +139,14 @@ class Refused(Exception):
         self.status = status
         self.message = message
         self.extra = extra
+
+
+class Raw:
+    """A route's answer that is a file, such as the assistant's face, not JSON."""
+
+    def __init__(self, content_type, data):
+        self.content_type = content_type
+        self.data = data
 
 
 class CliError(Exception):
@@ -563,7 +573,7 @@ class App:
 
     def note_path(self, path):
         if not isinstance(path, str) or not (path in NOTES or PROFILE.fullmatch(path)):
-            raise Refused(400, "The dashboard edits assistant/persona.md, assistant/rules.md and "
+            raise Refused(400, "The dashboard edits assistant/soul.md, assistant/rules.md and "
                                "people/<name>/profile.md only.")
         return path
 
@@ -642,6 +652,55 @@ class App:
                 person["notes"].append(path)
         return {"people": sorted(people.values(), key=lambda person: person["name"].lower())}
 
+    # Soul -----------------------------------------------------------------------
+
+    def route_soul(self, query, body):
+        soul = self.oppa.json(["soul"])[1]
+        face = soul.get("avatar")
+        stamp = ""
+        if isinstance(face, str):
+            try:
+                stamp = str(int(os.stat(face).st_mtime * 1000))
+            except OSError:
+                face = None
+        return {"soul": {"note": soul.get("note"), "face": bool(face), "face_version": stamp,
+                         "earlier": len(soul.get("earlier") or []), "presets": soul.get("presets") or []}}
+
+    def route_face(self, query, body):
+        face = self.oppa.json(["soul"])[1].get("avatar")
+        if not isinstance(face, str):
+            raise Refused(404, "The assistant has no face yet.")
+        try:
+            with open(face, "rb") as picture:
+                return Raw("image/png", picture.read())
+        except OSError:
+            raise Refused(404, "The assistant has no face yet.") from None
+
+    def route_set_face(self, query, body):
+        image = body.get("image")
+        if not isinstance(image, str):
+            raise Refused(400, "Send the picture as base64 in image.")
+        try:
+            data = base64.b64decode(image, validate=True)
+        except ValueError:
+            raise Refused(400, "The picture is not valid base64.") from None
+        if not data or len(data) > MAX_FACE:
+            raise Refused(413, "The picture is too large. Choose a smaller one.")
+        handle, temporary = tempfile.mkstemp(dir=self.state, prefix="face-")
+        try:
+            with os.fdopen(handle, "wb") as out:
+                out.write(data)
+            try:
+                self.oppa.json(["soul", "avatar", temporary])
+            except CliError as failure:
+                raise Refused(400, "That file is not a picture the assistant can use.") from failure
+        finally:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+        return self.route_soul(query, body)
+
     # Health -------------------------------------------------------------------
 
     def route_doctor(self, query, body):
@@ -671,6 +730,9 @@ ROUTES = {
     ("GET", "/api/note"): App.route_note,
     ("PUT", "/api/note"): App.route_save_note,
     ("GET", "/api/people"): App.route_people,
+    ("GET", "/api/soul"): App.route_soul,
+    ("GET", "/api/soul/face"): App.route_face,
+    ("POST", "/api/soul/face"): App.route_set_face,
     ("GET", "/api/dev/doctor"): App.route_doctor,
     ("GET", "/api/dev/tasks"): App.route_tasks,
     ("GET", "/api/dev/outbox"): App.route_outbox,
@@ -762,6 +824,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except Exception as error:  # an adapter bug must not look like an answer
             log("web: %s failed: %s" % (url.path, type(error).__name__))
             return self.reply(500, {"error": "The web channel failed to handle this request."})
+        if isinstance(result, Raw):
+            return self.respond(200, result.content_type, result.data)
         self.reply(200, result)
 
     def parse_json(self, raw):
