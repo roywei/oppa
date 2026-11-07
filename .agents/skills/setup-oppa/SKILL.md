@@ -362,6 +362,41 @@ read their answers. Do this only if the owner said yes in step 3.
    small. Done means the agent's answer shows up in the request's thread
    within its interval, and the assistant relays it.
 
+## Switching the driver after setup
+
+The first choice is a default, not a permanent binding. When the owner asks
+this coding agent to switch an existing OPPA from Claude to Codex or back:
+
+1. Read the existing private configuration and service status. Keep the instance,
+   memory, history, channels and access. Never run `init` again. If the private
+   configuration has uncommitted edits, preserve them and reconcile their owner
+   before changing the same file.
+2. Check the target CLI and its subscription sign-in using step 2. Prove a reply
+   on a disposable instance with that driver before changing the live choice.
+   Do not copy credentials or import the other harness's memories automatically.
+3. Save the previous configuration for rollback. Update the primary `[[agents]]`
+   entry from the target's bundled manifest in `resources/agents/`, with its
+   adapter path resolved to the existing runtime's `adapters/` directory.
+   Preserve any explicitly configured fallback agents and avoid duplicate ids.
+   Do not carry a provider-specific model or unsupported effort across: use the
+   target's default model and medium effort unless the owner chose others.
+4. Run `oppa doctor`, review that only the intended agent configuration changed,
+   and commit that configuration change in its private Git repository. Restart
+   the existing service with the owner present so every process uses the choice.
+   Do not reinstall the launcher or change macOS grants.
+5. Ask the owner for a message on their normal channel. Verify the reply and
+   the run's actual agent; if a fallback answered, the switch is not yet proved.
+   If the target cannot answer, restore and commit the previous configuration,
+   restart, and explain the failure before trying again.
+
+OPPA's memory and conversation history stay with the instance. Each harness
+has its own native sessions and connected accounts; a switch does not transfer
+those accounts. Check any connection the owner needs in the new driver.
+
+This workflow runs in the external coding agent. OPPA currently cannot switch
+its own driver through chat; its instructions prohibit changing its running
+configuration. Do not work around that restriction with a shell command.
+
 ## After setup
 
 Tell the owner:

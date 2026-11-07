@@ -72,6 +72,17 @@ Once it answers, add more channels by asking in chat ("set up WeChat", "I want
 to text you on iMessage"); the assistant walks you through it with
 `oppa channels add` and a running serve starts the channel with no restart.
 
+## Switch drivers later
+
+You can change from Claude to Codex or back without starting over. Ask your
+coding agent: "Switch my existing OPPA to Codex" (or Claude). It follows the
+setup skill's switching steps: check the new subscription, update the existing
+configuration, restart and verify a reply. OPPA keeps its memory and history;
+the new driver uses its own connected accounts.
+
+There is no dedicated switch command or in-chat switch yet. Use the external
+coding agent for this change; do not run `oppa init` again.
+
 ## Configuration
 
 `oppa init` asks where you will talk to the assistant and writes those channels

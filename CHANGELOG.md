@@ -24,3 +24,6 @@ First public release.
   launchd credentials and phone delivery still require the owner's laptop test.
   Validation: `cargo test --offline`, `python3 scripts/audit.py` and
   `git diff --check` passed; the separate diff review found no policy changes.
+- Documented switching an existing instance through the external coding agent,
+  preserving OPPA memory and history and verifying the target subscription.
+  This adds guidance, not an in-chat switch or a new settings command.
