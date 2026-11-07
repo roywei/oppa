@@ -25,12 +25,20 @@ after. It can propose changes to its own code on a branch for you to review.
 
 ## Set up
 
-Open this checkout in Claude Code or Codex and ask it to set up OPPA (the
-`setup-oppa` skill, `/setup-oppa` in Claude Code). The agent checks the
-prerequisites, builds, creates the instance, writes the configuration and
-installs the service. You answer one round of questions (which connections, your
-phone number), grant Full Disk Access to one file, click Allow on the macOS
-dialogs, and send the assistant one text from your phone.
+Give this README or the repository URL to Claude Code or Codex and ask:
+
+> Set up OPPA on this Mac. Follow the setup-oppa skill in the repository.
+
+The coding agent checks the prerequisites, builds, configures and installs OPPA.
+First setup uses that same agent as the driver: Claude Code chooses Claude;
+Codex chooses Codex. You can request another driver. Repairs and upgrades keep
+the existing choice.
+
+You choose a name, voice and channel, approve macOS permissions, and send one
+message. Once OPPA answers on your phone or dashboard, continue talking to OPPA.
+It learns your language and household, offers memory import, and introduces
+optional abilities one at a time. The setup agent leaves a note with your choices
+and remaining steps so you do not need to start over.
 
 It assumes a Mac with Rust 1.89+, Git, the Xcode command line tools and a
 signed-in Codex or Claude Code CLI subscription. OPPA uses the CLI's existing
@@ -42,13 +50,15 @@ For a Codex-only Mac, no Claude installation or API key is needed. Check
 `brew install --cask codex`, then run `codex login` and choose **Sign in with
 ChatGPT**. OPPA uses that subscription's model access and usage limits.
 [OpenAI's sign-in guide](https://learn.chatgpt.com/docs/auth) explains the difference
-between subscription and API billing. Leave `--model` unset to use Codex's default.
+between subscription and API billing. Either driver uses its own default model
+unless you request one.
 
-By hand, the same steps are (use `--agent claude` if that is your chosen CLI):
+For manual setup, set `OPPA_DRIVER` to `claude` or `codex` for the subscription
+you want OPPA to use. The setup agent sets this from its own identity:
 
 ```sh
 cargo build --release --locked
-./target/release/oppa init --agent codex --web --imessage +15555550100
+./target/release/oppa init --agent "$OPPA_DRIVER" --web --imessage +15555550100
 ./target/release/oppa chat --message "hello"    # proves the harness sign-in
 # edit ~/.oppa-private/config.toml: connectors, below
 ./target/release/oppa service install           # copies the build, writes the launch agents

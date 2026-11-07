@@ -12,7 +12,10 @@ permission clicks, and one text from their phone. Batch the questions into one
 round. The owner may never have used a terminal: say what you are doing in
 plain words, and never ask them to type a command.
 
-Setup ends at the first reply on their phone. Everything else, such as which
+Setup ends at the first reply on their chosen channel (phone, dashboard or
+terminal). Write the onboarding note before that handoff, with choices already
+made and any optional setup still pending, so OPPA does not ask them again.
+Everything else, such as which
 language to reply in, the household, importing what Claude Code and Codex
 remember and the abilities they have not tried, the assistant takes up itself
 in chat, one thing at a time, from the onboarding note you write in step 5.
@@ -51,9 +54,16 @@ Check each; install only after saying what you will install.
 | One signed-in CLI | Codex: `codex --version` and `codex login status`; Claude: `claude --version` | use the owner's chosen subscription; see below |
 | imsg 0.15+ (only for iMessage) | `imsg --version` | Homebrew's tap can be older. Download the latest release from github.com/openclaw/imsg into `~/.oppa/channels/imsg-bridge/` after step 4, keeping its helper files beside it |
 
-Use the harness the owner already has. A Codex-only Mac needs no Claude
-installation or Anthropic account. If both are available, ask which to use.
-Do not infer CLI availability or sign-in from an open desktop app.
+For a new instance, use the coding agent performing this setup as the driver:
+Claude Code selects `claude`; Codex selects `codex`. Pass that selection explicitly
+to `oppa init --agent`; do not rely on the CLI's unattended default. Having both
+CLIs installed does not change this choice. Ask only if you cannot identify the
+setup agent, or the owner wants a different driver.
+
+For an existing instance, preserve its configured driver, even if a different
+coding agent handles this repair or upgrade. Change it only at the owner's request.
+Each path needs only its own subscription and CLI. Do not infer CLI availability
+or sign-in from an open desktop app.
 
 For Codex, run `codex --version` and `codex login status`. If the CLI is missing,
 install it with `brew install --cask codex` after saying what you will install.
@@ -136,7 +146,7 @@ Ask these together, with defaults filled in from what you can see:
 - **Model and effort**, if they care: the harness's default model at `medium`
   effort unless they name others (`--model`, `--effort low|medium|high|xhigh|max`).
   Hard work goes to a high-effort subagent either way.
-- **Harness**, only if both CLIs are signed in.
+- **Driver**, only if the setup agent is unknown or the owner wants a different one.
 
 ## 4. Build, create and prove a reply
 
@@ -148,8 +158,9 @@ installing the branch as the owner's service.
 
 ```sh
 cargo build --release --locked
-$B init --agent codex --access full --web --imessage +15555550100,owner@example.com
-# Use --agent claude only when Claude is the chosen harness.
+# Set OPPA_DRIVER to claude when you are Claude Code, or codex when you are Codex.
+# Use the owner's explicit choice instead if they gave one.
+$B init --agent "$OPPA_DRIVER" --access full --web --imessage +15555550100,owner@example.com
 # Drop --web or --imessage if declined; add --vault OPPA only if chosen.
 # Add --no-browser, --model, --effort or --knowledge PATH if they asked.
 $B doctor
@@ -162,9 +173,9 @@ asking what you just asked, to check session continuity. If either fails, inspec
 installation or PATH fix; an authentication failure needs subscription sign-in;
 a quota failure needs the reset time; an unavailable model needs one the account
 can use. Do not treat every failure as a login problem or switch providers.
-Leave `--model` unset unless requested, so Codex uses its own default.
+Leave `--model` unset unless requested, so the selected harness uses its own default.
 
-With Codex, continue only after both turns use Codex. Test the dashboard or
+Continue only after both turns use the selected driver. Test the dashboard or
 phone after service start too: a terminal reply does not prove the service can
 find the CLI or its sign-in.
 

@@ -9,8 +9,11 @@ First public release.
   including one made with the owner's token, so they find requests by checking the room on a schedule.
   Setup step 10 walks the owner through connecting each agent and pasting the polling prompt.
 
-- Codex-only setup now checks CLI availability and ChatGPT subscription sign-in,
-  uses the selected harness in its commands, and verifies a second turn before
+- First setup explicitly selects the coding agent performing it: Claude Code
+  selects Claude, Codex selects Codex; repairs preserve the existing driver.
+  The setup agent leaves choices and pending steps for OPPA to finish in chat.
+  Codex setup checks CLI availability and ChatGPT subscription sign-in,
+  and either driver verifies a second turn before
   service installation. API keys and Claude are not required for Codex setup.
   `oppa doctor` now detects missing or non-executable bundled harness CLIs;
   install the selected CLI on PATH, sign in, and retry an actual chat.
