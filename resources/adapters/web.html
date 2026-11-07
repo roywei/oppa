@@ -145,7 +145,7 @@ textarea { line-height: 1.5; resize: vertical; }
 .msg { max-width: min(680px, 86%); padding: 9px 14px; border-radius: 16px; overflow-wrap: anywhere; }
 .msg.in { align-self: flex-end; background: var(--owner-bubble); color: var(--owner-ink); border-bottom-right-radius: 5px; }
 .msg.out { align-self: flex-start; background: var(--surface-2); border-bottom-left-radius: 5px; }
-.has-face .msg.out { position: relative; margin-left: 38px; }
+.has-face .msg.out { position: relative; margin-left: 38px; max-width: calc(min(680px, 86%) - 38px); }
 .has-face .msg.out::before { content: ""; position: absolute; left: -38px; bottom: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--surface-2) var(--face) center / cover no-repeat; }
 .msg.pending { opacity: 0.6; }
 .msg.failed { box-shadow: inset 0 0 0 1.5px var(--danger); }
@@ -275,6 +275,7 @@ pre.output { margin: 0 0 12px; padding: 12px 14px; overflow-x: auto; background:
   .conversation-head { padding: 10px 12px; }
   .messages { padding: 14px 12px; }
   .msg { max-width: 92%; }
+  .has-face .msg.out { max-width: calc(92% - 38px); }
   .levels, .people, .soul { grid-template-columns: minmax(0, 1fr); }
   .table.stack thead { display: none; }
   .table.stack tr { display: block; padding: 8px 0; border-bottom: 1px solid var(--border); }
