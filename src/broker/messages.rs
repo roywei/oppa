@@ -41,6 +41,18 @@ pub(super) struct MessageSend {
     idempotency_key: String,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct MessageReact {
+    context: String,
+    event_seq: i64,
+    reaction: String,
+    idempotency_key: String,
+}
+
+/// The tapbacks a channel takes; iMessage names these six.
+const REACTIONS: [&str; 6] = ["love", "like", "dislike", "laugh", "emphasize", "question"];
+
 /// Files one message may carry, each at most this large: what the channels
 /// take as a photo or a document.
 const FILES_PER_MESSAGE: usize = 8;
@@ -76,6 +88,10 @@ pub(super) fn definitions(grant: &RunGrant, context: &Value) -> Vec<Value> {
     let mut tools = Vec::new();
     if grant.task_access == TaskAccess::Manage && grant.role != crate::config::Role::Owner {
         tools.push(tool("messages.ask_owner", "Ask the owner, in their direct chat with you, about something this family member asked for that the owner's rules say needs the owner's yes, such as building or hosting something new, acting as the owner, or sharing something private of the owner's. Say who asked and what exactly. The owner answers in their own chat; tell this person you asked, and do it once the owner says yes.", json!({"context":context,"text":{"type":"string","minLength":1,"maxLength":8192},"idempotency_key":{"type":"string","minLength":1,"maxLength":256}}), &["context","text","idempotency_key"], false));
+    }
+    // A conversation turn reacts; a delegated task or heartbeat has no one to react to.
+    if grant.task_access == TaskAccess::Manage {
+        tools.push(tool("messages.react", "React to a message in the current conversation with a tapback (love ❤️, like 👍, dislike 👎, laugh 😂, emphasize ‼️, question ❓), as a friend would: instead of a reply that would say only as much, or beside one. Name the message by its event_seq. It goes out when this turn ends; a channel without reactions refuses it.", json!({"context":context,"event_seq":{"type":"integer"},"reaction":{"type":"string","enum":REACTIONS},"idempotency_key":{"type":"string","minLength":1,"maxLength":256}}), &["context","event_seq","reaction","idempotency_key"], false));
     }
     if grant.task_access != TaskAccess::Manage || grant.access.is_read() {
         return tools;
@@ -201,6 +217,62 @@ impl Broker {
             .as_i64()
             .ok_or_else(unavailable)?;
         result["delivery"] = self.await_delivery(&store, outbox_id)?;
+        Ok(result)
+    }
+
+    /// A tapback on someone's message in the current conversation. Its worker
+    /// is running this turn, so it is queued and goes out when the turn ends.
+    pub(super) fn message_react(&self, args: MessageReact) -> ToolCall {
+        self.authorize(&args.context)?;
+        if self.launch.grant.task_access != TaskAccess::Manage {
+            return Err(denied());
+        }
+        if !REACTIONS.contains(&args.reaction.as_str())
+            || args.idempotency_key.trim().is_empty()
+            || args.idempotency_key.len() > 256
+        {
+            return Err(invalid());
+        }
+        let grant = &self.launch.grant;
+        let store = Store::open(&self.launch.database).map_err(|_| unavailable())?;
+        let mut target = store.event(args.event_seq).map_err(|_| invalid())?;
+        // An edit stands for the message it changed.
+        if target.kind == "edit" {
+            let original = target.reply_to.as_deref().and_then(|seq| seq.parse().ok());
+            target = original
+                .and_then(|seq| store.event(seq).ok())
+                .ok_or_else(invalid)?;
+        }
+        if !grant.conversations.contains(&target.conversation) {
+            return Err(denied());
+        }
+        if target.kind != "message" || target.native_id.is_none() {
+            return Err(Fault {
+                code: "not_a_message",
+                message: "That event is not a channel message that can take a reaction.",
+            });
+        }
+        let conversation = store
+            .conversation(&target.conversation)
+            .map_err(|_| denied())?;
+        if conversation.channel == "console" {
+            return Err(not_deliverable());
+        }
+        if self.on_owners_account(&conversation.channel, &conversation.account) {
+            return Err(owners_account());
+        }
+        let key = format!(
+            "send:react:{}:{}",
+            grant.input_seq,
+            digest(&args.idempotency_key).map_err(|_| unavailable())?
+        );
+        let mut result = self.journaled_effect("messages.react", "outward", &args, || {
+            let entry = store
+                .enqueue_reaction(&target.conversation, &key, target.seq, &args.reaction)
+                .map_err(|_| invalid())?;
+            Ok(json!({"outbox_id":entry.id,"event_seq":entry.event.seq}))
+        })?;
+        result["delivery"] = json!({"state":"queued","meaning":"It goes out when this turn ends."});
         Ok(result)
     }
 

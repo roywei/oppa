@@ -408,7 +408,7 @@ fn provider_configuration_preserves_literal_launch_arguments_and_scope() {
     );
     // Every host tool family the broker may offer: history, memory, tasks,
     // schedules, wakes, messages and people.
-    assert_eq!(server["enabled_tools"].as_array().unwrap().len(), 25);
+    assert_eq!(server["enabled_tools"].as_array().unwrap().len(), 26);
     assert_eq!(parsed["approval_policy"].as_str(), Some("never"));
     assert_eq!(parsed["model_reasoning_effort"].as_str(), Some("medium"));
 
@@ -436,7 +436,7 @@ fn provider_configuration_preserves_literal_launch_arguments_and_scope() {
     assert_eq!(settings["autoMemoryEnabled"], false);
     assert_eq!(settings["claudeMdExcludes"], serde_json::json!(["**"]));
     let allowed = value_after("--allowedTools");
-    assert_eq!(allowed.split(',').count(), 25 + 16);
+    assert_eq!(allowed.split(',').count(), 26 + 16);
     assert!(allowed
         .split(',')
         .any(|t| t == "mcp__claude_ai_Gmail__search_threads"));

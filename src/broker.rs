@@ -330,6 +330,7 @@ impl Broker {
                 "wakes.list" => self.wake_list(parse(args)?),
                 "wakes.cancel" => self.wake_cancel(parse(args)?),
                 "messages.send" => self.message_send(parse(args)?),
+                "messages.react" => self.message_react(parse(args)?),
                 "messages.ask_owner" => self.ask_owner(parse(args)?),
                 "people.list" => self.people_list(parse(args)?),
                 "people.propose" => self.people_propose(parse(args)?),

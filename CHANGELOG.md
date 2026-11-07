@@ -4,6 +4,9 @@
 
 First public release.
 
+- iMessage tapbacks: a turn can react to a message in its conversation with `messages.react` (love, like,
+  dislike, laugh, emphasize, question). The reaction is an outbound `reaction` event in the outbox, sent through
+  imsg's bridge when the turn ends; a channel that does not take reactions refuses it as not sent.
 - The dashboard has one tab bar: the User/Developer switch is gone and Health is its last tab.
 - Slack: `ask` posts as the assistant's own app, not as the owner. Agents in Slack skip every app post,
   including one made with the owner's token, so they find requests by checking the room on a schedule.

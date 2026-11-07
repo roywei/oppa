@@ -870,11 +870,54 @@ impl Store {
         attachments: Vec<Attachment>,
         reply_to: Option<String>,
     ) -> Result<OutboxEntry> {
+        self.enqueue(
+            "message",
+            conversation,
+            idempotency_key,
+            body,
+            attachments,
+            reply_to,
+        )
+    }
+
+    /// A tapback on message `target`: an outbound `reaction` event whose body
+    /// names the reaction, delivered through the outbox like a reply.
+    pub fn enqueue_reaction(
+        &self,
+        conversation: &str,
+        idempotency_key: &str,
+        target: i64,
+        reaction: &str,
+    ) -> Result<OutboxEntry> {
+        self.enqueue(
+            "reaction",
+            conversation,
+            idempotency_key,
+            reaction,
+            vec![],
+            Some(target.to_string()),
+        )
+    }
+
+    fn enqueue(
+        &self,
+        kind: &str,
+        conversation: &str,
+        idempotency_key: &str,
+        body: &str,
+        attachments: Vec<Attachment>,
+        reply_to: Option<String>,
+    ) -> Result<OutboxEntry> {
         ensure!(
             !idempotency_key.trim().is_empty(),
             "idempotency key is required"
         );
-        let digest = digest(&(conversation, body, &attachments, &reply_to))?;
+        // A message keeps its old digest, so keys queued before reactions still match.
+        let digest = if kind == "message" {
+            digest(&(conversation, body, &attachments, &reply_to))?
+        } else {
+            digest(&(kind, conversation, body, &attachments, &reply_to))?
+        };
         let tx = Transaction::new_unchecked(&self.connection, TransactionBehavior::Immediate)?;
         let existing:Option<(i64,String)>=tx.query_row("SELECT o.id,e.payload_digest FROM outbox o JOIN events e ON e.seq=o.event_seq WHERE o.idempotency_key=?1",[idempotency_key],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
         let id = if let Some((id, stored_digest)) = existing {
@@ -884,7 +927,7 @@ impl Store {
             );
             id
         } else {
-            tx.execute("INSERT INTO events(conversation,created_at,direction,author,kind,body,attachments,reply_to,payload_digest) VALUES(?1,?2,'out',?3,'message',?4,?5,?6,?7)",params![conversation,now(),ASSISTANT,body,serde_json::to_string(&attachments)?,reply_to,digest])?;
+            tx.execute("INSERT INTO events(conversation,created_at,direction,author,kind,body,attachments,reply_to,payload_digest) VALUES(?1,?2,'out',?3,?4,?5,?6,?7,?8)",params![conversation,now(),ASSISTANT,kind,body,serde_json::to_string(&attachments)?,reply_to,digest])?;
             let seq = tx.last_insert_rowid();
             tx.execute("INSERT INTO outbox(event_seq,idempotency_key,state,updated_at) VALUES(?1,?2,'queued',?3)",params![seq,idempotency_key,now()])?;
             tx.last_insert_rowid()

@@ -26,9 +26,9 @@ MAX_STDERR = 64 * 1024
 OPPA_TOOLS = ("history.search", "history.read", "history.conversations", "history.turn", "memory.search", "memory.read",
                  "memory.commit", "memory.forget", "memory.import", "tasks.delegate", "tasks.list", "tasks.read", "tasks.stop",
                  "schedules.create", "schedules.list", "schedules.cancel", "wakes.set", "wakes.list", "wakes.cancel",
-                 "messages.send", "messages.ask_owner", "people.list", "people.propose", "people.answer", "people.group")
+                 "messages.send", "messages.react", "messages.ask_owner", "people.list", "people.propose", "people.answer", "people.group")
 OPPA_EFFECTS = frozenset(("memory.commit", "memory.forget", "memory.import", "tasks.delegate", "tasks.stop", "schedules.create", "schedules.cancel",
-                          "wakes.set", "wakes.cancel", "messages.send", "messages.ask_owner", "people.propose", "people.answer",
+                          "wakes.set", "wakes.cancel", "messages.send", "messages.react", "messages.ask_owner", "people.propose", "people.answer",
                           "people.group"))
 
 

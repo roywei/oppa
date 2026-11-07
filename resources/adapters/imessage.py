@@ -16,6 +16,9 @@ a message forwarded in the last 20 minutes are read again every few seconds, and
 a forwarded message whose text changed is forwarded again under its GUID. The
 host records that as an edit, as it does a changed row in a restart's overlap.
 
+A `react` request sends a tapback on a message through imsg's bridge; the
+six classic tapbacks only, since imsg cannot send a custom emoji one.
+
 Usage: imessage.py --state DIR [--imsg PATH] [--db PATH] [--overlap N] [--edit-poll SECONDS]
 Requires imsg 0.15 or later and Full Disk Access for the process running it.
 """
@@ -43,6 +46,8 @@ MAX_MEMBERS = 64
 EDIT_WINDOW_SECONDS = 20 * 60
 # At most this many of a chat's newest rows are read to find a remembered message's edit.
 HISTORY_ROWS = 800
+# The tapbacks imsg's bridge sends.
+TAPBACKS = ("love", "like", "dislike", "laugh", "emphasize", "question")
 # imsg reports these before any dispatch: invalid params, database unavailable.
 IMSG_NOT_DISPATCHED = (-32602, -32002)
 
@@ -215,7 +220,8 @@ class Adapter:
             params = request.get("params") or {}
             if method == "shutdown":
                 break
-            handler = {"initialize": self.initialize, "send": self.send, "health": self.health}.get(method)
+            handler = {"initialize": self.initialize, "send": self.send, "react": self.react,
+                       "health": self.health}.get(method)
             if handler is None:
                 if request_id is not None:
                     self.reply(request_id, error={"code": -32601, "message": "unknown method"})
@@ -246,13 +252,14 @@ class Adapter:
         missing = {"send", "watch.subscribe"} - set(status.get("methods") or [])
         if missing:
             raise AdapterFailure(-32603, "imsg is missing " + ", ".join(sorted(missing)) + "; install imsg 0.15 or later")
+        self.tapbacks = "tapback" in (status.get("methods") or [])
         self.subscribe(self.state.resume_after(self.options.overlap))
         if "messages.history" in (status.get("methods") or []):
             threading.Thread(target=self.watch_edits, daemon=True).start()
         else:
             self.reread_error = "imsg has no messages.history; edits are seen only after a restart"
         return {"protocol_version": PROTOCOL_VERSION,
-                "capabilities": {"attachments": True, "receipts": True, "threads": False, "reactions": False, "typing": False}}
+                "capabilities": {"attachments": True, "receipts": True, "threads": False, "reactions": self.tapbacks, "typing": False}}
 
     def health(self, _params):
         status = self.imsg.call("status", timeout=10)
@@ -297,6 +304,24 @@ class Adapter:
                 if self.sending[chat] <= 0:
                     del self.sending[chat]
                 self.release_held()
+
+    def react(self, params):
+        """A tapback through imsg's bridge. imsg answers only once Messages took
+        it, so an answer is the receipt; the reaction row's GUID when imsg names one."""
+        chat, target, kind = params.get("conversation"), params.get("message"), params.get("reaction")
+        if not (bounded(chat) and bounded(target)) or kind not in TAPBACKS:
+            raise AdapterFailure(NOT_SENT, "no conversation, message or known reaction")
+        try:
+            result = self.imsg.call("tapback", {"chat_guid": chat, "message_guid": target, "kind": kind})
+        except ImsgError as error:
+            if error.data.get("disposition") == "not_started" or error.code in IMSG_NOT_DISPATCHED:
+                raise AdapterFailure(NOT_SENT, f"imsg did not dispatch the tapback: {error}")
+            raise AdapterFailure(UNVERIFIED, f"imsg tapback outcome unknown: {error}")
+        except TimeoutError as error:
+            raise AdapterFailure(UNVERIFIED, f"imsg tapback outcome unknown: {error}")
+        result = result if isinstance(result, dict) else {}
+        guid = bounded(result.get("guid")) or bounded(result.get("message_guid"))
+        return {"native_id": guid or f"tapback:{kind}:{target}"}
 
     def await_echo(self, chat, text):
         deadline = time.monotonic() + ECHO_WAIT_SECONDS

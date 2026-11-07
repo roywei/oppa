@@ -865,9 +865,9 @@ fn task_paths(fixture: &Fixture) -> Paths {
 #[test]
 fn delegation_binds_original_input_replays_identical_task_and_rejects_changed_payload() {
     let fixture = task_fixture(TaskAccess::Manage);
-    // History 4, memory 4, tasks 4, schedules 3, people 4; a read run has no
-    // messages.send.
-    assert_eq!(fixture.broker.definitions().len(), 19);
+    // History 4, memory 4, tasks 4, schedules 3, people 4, messages.react; a
+    // read run has no messages.send.
+    assert_eq!(fixture.broker.definitions().len(), 20);
     let args = task_args(&fixture);
     for name in [
         "requester",

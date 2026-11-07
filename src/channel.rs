@@ -307,6 +307,11 @@ impl ChannelClient {
         reply_to: Option<&str>,
         attachments: &[Attachment],
     ) -> DeliveryObservation {
+        let params = json!({"conversation":native_conversation,"body":body,"reply_to":reply_to,"attachments":attachments});
+        self.deliver("send", params).await
+    }
+
+    async fn deliver(&self, method: &'static str, params: Value) -> DeliveryObservation {
         // Whatever queued it, nothing goes out as the owner.
         if self.manifest.account_holder == AccountHolder::Owner {
             return DeliveryObservation::ConfirmedNotSent {
@@ -314,10 +319,9 @@ impl ChannelClient {
                     .into(),
             };
         }
-        let params = json!({"conversation":native_conversation,"body":body,"reply_to":reply_to,"attachments":attachments});
         match self
             .call(
-                "send",
+                method,
                 params,
                 Duration::from_secs(self.manifest.timeout_seconds),
             )
@@ -351,6 +355,26 @@ impl ChannelClient {
                 evidence: bounded(&format!("Adapter transport failed during send: {detail}")),
             },
         }
+    }
+
+    /// A tapback on the native message `target`. A channel that never said it
+    /// takes reactions is not asked, so nothing reaches it.
+    pub async fn react(
+        &self,
+        native_conversation: &str,
+        target: &str,
+        reaction: &str,
+    ) -> DeliveryObservation {
+        if !self.capabilities.reactions {
+            return DeliveryObservation::ConfirmedNotSent {
+                evidence: "This channel does not take reactions.".into(),
+            };
+        }
+        self.deliver(
+            "react",
+            json!({"conversation":native_conversation,"message":target,"reaction":reaction}),
+        )
+        .await
     }
 
     pub async fn health(&self) -> Result<Value> {
@@ -493,12 +517,21 @@ impl Deliver for ChannelDelivery {
             .and_then(|event| event.native_id);
         let client = self.client.clone();
         let conversation = self.native_conversation.clone();
+        let reaction = entry.event.kind == "reaction";
         let body = entry.event.body.clone();
         let attachments = entry.event.attachments.clone();
         async move {
-            Ok(client
-                .send_message(&conversation, &body, reply_to.as_deref(), &attachments)
-                .await)
+            if !reaction {
+                return Ok(client
+                    .send_message(&conversation, &body, reply_to.as_deref(), &attachments)
+                    .await);
+            }
+            Ok(match reply_to {
+                Some(target) => client.react(&conversation, &target, &body).await,
+                None => DeliveryObservation::ConfirmedNotSent {
+                    evidence: "The message to react to has no channel id.".into(),
+                },
+            })
         }
     }
 }
