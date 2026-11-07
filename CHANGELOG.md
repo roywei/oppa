@@ -21,6 +21,8 @@ First public release.
   image key is the paid fallback, a picture or initials the free one), registers Codex beside a Claude driver,
   and asks about importing Claude Code and Codex memory up front. The import's closing message now says what it
   left out, and onboarding offers a paste-in prompt for other assistants.
+- The OPPA mark no longer shows a sliver of blue between the hair and the right ear: the brand kit's new
+  temple path is in `site/assets` (icon, face, lockups, social card) and in the dashboard's inline mark and favicon.
 - iMessage tapbacks and the typing bubble, optional: both need imsg's bridge, which needs SIP off; without it
   text works as before and a tapback is refused as not sent. A turn reacts with `messages.react` (love, like, dislike,
   laugh, emphasize, question); a message takes one reaction, the first is final, and it is sent when the turn ends
