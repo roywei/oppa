@@ -48,11 +48,31 @@ Check each; install only after saying what you will install.
 | --- | --- | --- |
 | Rust 1.89+ | `cargo --version` | `brew install rust`, or rustup |
 | System Python and command line tools | `/usr/bin/python3 --version`, `xcode-select -p` | `xcode-select --install` (the owner clicks Install) |
-| A signed-in harness | `claude --version` or `codex --version` | the owner signs in once; step 4 proves it |
+| One signed-in CLI | Codex: `codex --version` and `codex login status`; Claude: `claude --version` | use the owner's chosen subscription; see below |
 | imsg 0.15+ (only for iMessage) | `imsg --version` | Homebrew's tap can be older. Download the latest release from github.com/openclaw/imsg into `~/.oppa/channels/imsg-bridge/` after step 4, keeping its helper files beside it |
 
-The harness is the CLI you are running in, if it is Claude Code or Codex. The
-assistant's own turns are that harness as the owner set it up: every account,
+Use the harness the owner already has. A Codex-only Mac needs no Claude
+installation or Anthropic account. If both are available, ask which to use.
+Do not infer CLI availability or sign-in from an open desktop app.
+
+For Codex, run `codex --version` and `codex login status`. If the CLI is missing,
+install it with `brew install --cask codex` after saying what you will install.
+If it is signed out, run `codex login` in an interactive terminal and let the
+owner complete **Sign in with ChatGPT** in their browser. If the browser callback
+fails, use `codex login --device-auth` when their account allows device login.
+Check status again: it must say ChatGPT for subscription use. If it says API key,
+explain that OPPA requires subscription sign-in and let the owner choose whether
+to switch; never silently log them out or request an API key.
+
+Keep the CLI's credential store in place; never read or copy its tokens.
+Subscription limits and model availability still apply. A first real OPPA turn
+proves access; a version or login-status check alone does not.
+See [OpenAI authentication](https://learn.chatgpt.com/docs/auth).
+Use the same macOS login for setup and the service. The service uses the default
+`~/.codex` home; if the CLI uses a custom `CODEX_HOME`, resolve that difference
+before installing, rather than copying credentials into another home.
+
+The assistant's own turns are that harness as the owner set it up: every account,
 MCP server, plugin and skill they connected there is the assistant's too.
 
 ## 3. Ask once
@@ -120,18 +140,33 @@ Ask these together, with defaults filled in from what you can see:
 
 ## 4. Build, create and prove a reply
 
+Build an installation from a clean detached worktree at the chosen pushed
+commit. Other sessions may change a shared checkout while you build. Confirm
+`git status --short` is empty and record `git rev-parse HEAD` before building.
+For development tests, use the disposable `verify-oppa` instance instead of
+installing the branch as the owner's service.
+
 ```sh
 cargo build --release --locked
-$B init --agent claude --access full --vault OPPA --web --imessage +15555550100,owner@example.com
-# the harness, access, vault and channels the owner chose: drop --vault, --web or
-# --imessage if declined; add --no-browser, --model, --effort or --knowledge PATH
-# if they asked
+$B init --agent codex --access full --web --imessage +15555550100,owner@example.com
+# Use --agent claude only when Claude is the chosen harness.
+# Drop --web or --imessage if declined; add --vault OPPA only if chosen.
+# Add --no-browser, --model, --effort or --knowledge PATH if they asked.
 $B doctor
 $B chat --message "Say hello in five words."
 ```
 
-The reply proves the harness sign-in. If it fails, show the error. The fix is the
-owner signing in to that CLI, never an API key.
+The reply proves the selected harness can answer. Follow it with a second turn,
+asking what you just asked, to check session continuity. If either fails, inspect
+`oppa history` and the failed run before proceeding. A missing CLI needs an
+installation or PATH fix; an authentication failure needs subscription sign-in;
+a quota failure needs the reset time; an unavailable model needs one the account
+can use. Do not treat every failure as a login problem or switch providers.
+Leave `--model` unset unless requested, so Codex uses its own default.
+
+With Codex, continue only after both turns use Codex. Test the dashboard or
+phone after service start too: a terminal reply does not prove the service can
+find the CLI or its sign-in.
 
 Then prove each account they connected with a question whose answer only that
 account holds, such as `$B chat --message "What is the subject of my newest

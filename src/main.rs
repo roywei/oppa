@@ -1220,7 +1220,10 @@ fn initialize(
     }
     Store::open(&paths.database())?;
     println!("Instance created. Run oppa doctor, then oppa chat. Personal records have not been imported.");
-    println!("Every account, MCP server and plugin you connect in your harness is the assistant's too: connect Gmail, Google Calendar and Drive, Robinhood and the rest there (in Claude: Settings, Connectors; or claude mcp add).");
+    if selected == "codex" {
+        println!("Using Codex: run codex login status to check your sign-in. If needed, run codex login and choose Sign in with ChatGPT for subscription access; no API key is needed.");
+    }
+    println!("Connect accounts in your chosen harness: Codex apps/plugins or codex mcp add; Claude Settings, Connectors or claude mcp add. An actual chat verifies each connection.");
     match &knowledge {
         Some(Some(existing)) => println!("Your knowledge wiki at {} is linked as {}; the assistant follows its AGENTS.md.", existing.display(), paths.knowledge().display()),
         Some(None) => println!("A new knowledge wiki is at {}: ask the assistant to digest an article or a filing and it is kept there with its sources.", paths.knowledge().display()),
@@ -1517,6 +1520,21 @@ fn connector_report(connector: &ConnectorManifest, prompt: bool) -> serde_json::
     report
 }
 
+fn executable_on_path(program: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let executable = |path: &Path| {
+        fs::metadata(path)
+            .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    };
+    if Path::new(program).is_absolute() {
+        return executable(Path::new(program));
+    }
+    std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).any(|dir| executable(&dir.join(program))))
+        .unwrap_or(false)
+}
+
 fn doctor(paths: &Paths) -> Result<()> {
     let config = paths.load()?;
     let mut checks = vec![serde_json::json!({"check":"configuration","ready":true})];
@@ -1524,10 +1542,23 @@ fn doctor(paths: &Paths) -> Result<()> {
     checks.push(serde_json::json!({"check":"vault","ready":Vault::open(&paths.vault()).and_then(|v|v.check_ready()).is_ok()}));
     for agent in &config.agents {
         let program = agent.command.first().context("missing agent command")?;
-        let exists = std::env::var_os("PATH")
-            .map(|p| std::env::split_paths(&p).any(|d| d.join(program).is_file()))
-            .unwrap_or(false);
+        let exists = executable_on_path(program);
         checks.push(serde_json::json!({"check":"harness_launcher","agent":agent.id,"ready":exists,"authentication":"not probed; an actual chat verifies provider access"}));
+        // Only bundled adapters imply a native CLI. Custom adapters may use
+        // the same agent id with a different launcher.
+        for cli in ["codex", "claude"] {
+            let adapter = paths.runtime.join("adapters").join(format!("{cli}.py"));
+            if agent.command.get(1).map(Path::new) == Some(adapter.as_path()) {
+                checks.push(serde_json::json!({"check":"harness_cli","agent":agent.id,
+                    "program":cli,"ready":executable_on_path(cli),
+                    "authentication":"not probed; an actual chat verifies subscription access",
+                    "repair":if cli == "codex" {
+                        "Install Codex CLI on PATH, run codex login and choose Sign in with ChatGPT, then run oppa chat --message hello. No API key is needed."
+                    } else {
+                        "Install Claude Code on PATH, sign in with your subscription, then run oppa chat --message hello."
+                    }}));
+            }
+        }
     }
     for connector in config
         .connectors
