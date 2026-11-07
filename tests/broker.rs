@@ -1746,8 +1746,12 @@ fn pixels(picture: &Path) -> (u32, u32) {
 fn only_the_owners_turn_sets_a_face_which_is_squared_and_keeps_the_one_before() {
     // The owner asked on 2026-11-07 for a face like Muse's and Dot's: the owner's
     // turn sets it from a picture, the host squares it, and earlier faces stay so
-    // going back is possible. Nobody else changes who the assistant is.
-    let fixture = task_fixture(TaskAccess::Manage);
+    // going back is possible. Nobody else changes who the assistant is, and
+    // below full access the face is only a picture sent in the chat.
+    let mut fixture = task_fixture(TaskAccess::Manage);
+    fixture.launch.grant.access = Access::Computer;
+    fixture.launch.grant.run_id = "full-access-run".into();
+    fixture.broker = Broker::open(fixture.launch.clone()).unwrap();
     let paths = task_paths(&fixture);
     let dir = fixture.launch.private_dir.parent().unwrap().to_path_buf();
     let set = |broker: &Broker, file: &Path| {
@@ -1783,6 +1787,32 @@ fn only_the_owners_turn_sets_a_face_which_is_squared_and_keeps_the_one_before() 
             .any(|tool| tool["name"] == "soul.avatar"));
         assert_eq!(code(set(&broker, &picture(&dir, 20, 20))), "access_denied");
     }
+
+    // Review of 2026-11-07: below full access the run opens no file but its
+    // own, and a face leaves with every contact card.
+    let mut launch = fixture.launch.clone();
+    launch.grant.access = Access::Connectors;
+    launch.grant.run_id = "connectors-run".into();
+    let connectors = Broker::open(launch).unwrap();
+    let elsewhere = picture(&dir, 22, 22);
+    assert_eq!(code(set(&connectors, &elsewhere)), "not_allowed_here");
+    let sent = paths.runtime.join("attachments/connectors-run");
+    fs::create_dir_all(&sent).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, sent.join("link.png")).unwrap();
+    assert_eq!(
+        code(set(&connectors, &sent.join("link.png"))),
+        "not_allowed_here"
+    );
+    success(set(&connectors, &picture(&sent, 24, 24)));
+    // Going back to the first face, an earlier one, keeps every face.
+    let back = earlier[0].as_str().unwrap().to_owned();
+    let restored = success(set(&connectors, Path::new(&back)));
+    assert_eq!(
+        restored["receipt"]["earlier"].as_array().unwrap().len(),
+        3,
+        "the first, the second and the sent face are all kept"
+    );
+    assert_eq!(pixels(&paths.avatar()), (1024, 1024));
 }
 
 #[test]
@@ -1835,6 +1865,10 @@ fn a_contact_card_goes_once_per_name_and_face_and_only_to_a_direct_chat() {
         (&first["name"], &first["face"], &first["delivery"]["state"]),
         (&json!("Mimi"), &json!(true), &json!("queued"))
     );
+    // Review of 2026-11-07: a new face in the same run is a new card, not the
+    // first card's receipt.
+    oppa::soul::set_avatar(&paths, &picture(&dir, 30, 30)).unwrap();
+    success(card(&direct, "Mimi"));
     let again = in_chat("imsg/assistant/dm", "card-run-again");
     success(card(&again, "Mimi"));
     success(card(&again, "Juniper"));
@@ -1843,9 +1877,18 @@ fn a_contact_card_goes_once_per_name_and_face_and_only_to_a_direct_chat() {
         .unwrap()
         .into_iter()
         .filter(|entry| entry.event.kind == "contact")
-        .map(|entry| (entry.event.body, entry.event.attachments.len()))
+        .map(|entry| {
+            let face = fs::read(&entry.event.attachments[0].path).unwrap();
+            (entry.event.body, face)
+        })
         .collect();
-    assert_eq!(cards, [("Mimi".into(), 1), ("Juniper".into(), 1)]);
+    let names: Vec<_> = cards.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["Mimi", "Mimi", "Juniper"]);
+    assert_ne!(
+        cards[0].1, cards[1].1,
+        "the second card carries the new face"
+    );
+    assert_eq!(cards[1].1, cards[2].1);
     assert_eq!(
         code(card(&in_chat("imsg/assistant/club", "group-run"), "Mimi")),
         "not_a_direct_chat"

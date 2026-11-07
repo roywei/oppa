@@ -9,10 +9,14 @@ First public release.
   reads three notes, soul first: the soul, the owner's own profile `people/<owner>/profile.md` (who they are and
   how they like things done) and `assistant/rules.md`. The owner profile used to be read from
   `people/<owner>/private/profile.md`, a path nothing wrote, so standing preferences drifted into the persona
-  note; `assistant/persona.md` and `household/profile.md` are no longer read (see the setup guide's "Upgrading to
-  the soul note"). The manual that ships with OPPA is now `resources/manual/MANUAL.md` and defers to the soul.
-  Only the owner's own turn changes the soul or the rules. The face is a picture kept beside the vault:
-  `soul.avatar` (owner turns) and `oppa soul avatar <picture>` square it at 1024 pixels and keep earlier ones.
+  note. `household/profile.md` is no longer read, and `assistant/persona.md` stands in only for a soul not yet
+  written, so an upgrade keeps the name and voice (the setup guide's "Upgrading to the soul note" moves it, and the
+  assistant writes the soul from it at the owner's next change). The manual is now `resources/manual/MANUAL.md`
+  and defers to the soul.
+  Only the owner's own turn changes the soul or the rules. The face is a picture in `avatars/` beside the vault,
+  which ignores itself in the private repository: `soul.avatar` (owner turns; below full access only a picture sent
+  in the chat or an earlier face) and `oppa soul avatar <picture>` square it at 1024 pixels, one change at a time,
+  and keep earlier faces.
   `messages.contact_card` sends the assistant's contact card in a direct chat, once per name and face: the
   iMessage adapter writes a vCard with the address Messages records for that chat and the face as its photo,
   with no bridge needed; other channels refuse it as not sent. The dashboard's tabs are Chat, Soul (face,

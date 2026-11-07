@@ -1147,3 +1147,62 @@ async fn a_contact_card_carries_the_name_the_face_and_the_address_messages_recor
     stop.send(()).unwrap();
     server.await.unwrap().unwrap();
 }
+
+#[test]
+fn a_cards_address_is_the_one_the_chat_reaches_and_its_text_is_vcard() {
+    // Review of 2026-11-07: the address on the card is the handle the other
+    // side wrote to, else the account login without Messages' E: or P:
+    // prefix; a phone number is a TEL line, an address an EMAIL line, and the
+    // name is escaped as vCard 3.0 asks. A chat with neither gets no card.
+    let adapters = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/adapters");
+    let script = "import json,sys; sys.path.insert(0, sys.argv[1]); import imessage\n\
+        rows = json.loads(sys.argv[2])\n\
+        print(json.dumps([imessage.own_address(row) for row in rows]))\n\
+        print(json.dumps([line for line in imessage.vcard('Mimi; the, cat', '+15550123', None).split('\\r\\n')]))";
+    let rows = json!([
+        {"last_addressed_handle":"assistant@example.test","account_login":"E:other@example.test"},
+        {"account_login":"E:assistant@example.test"},
+        {"account_login":"P:+15550123"},
+        {"last_addressed_handle":"","account_login":"e:assistant@example.test"},
+        {"account_login":"E:"},
+        {}
+    ]);
+    let output = std::process::Command::new("python3")
+        .args(["-B", "-c", script])
+        .arg(&adapters)
+        .arg(rows.to_string())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    let mut lines = text.lines();
+    let addresses: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
+    assert_eq!(
+        addresses,
+        json!([
+            "assistant@example.test",
+            "assistant@example.test",
+            "+15550123",
+            "assistant@example.test",
+            null,
+            null
+        ])
+    );
+    let card: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
+    assert_eq!(
+        card,
+        json!([
+            "BEGIN:VCARD",
+            "VERSION:3.0",
+            "N:;Mimi\\; the\\, cat;;;",
+            "FN:Mimi\\; the\\, cat",
+            "TEL;TYPE=CELL:+15550123",
+            "END:VCARD",
+            ""
+        ])
+    );
+}

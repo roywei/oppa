@@ -459,18 +459,24 @@ class Adapter:
         chat, name, photo = params.get("conversation"), params.get("name"), params.get("photo")
         if not bounded(chat) or not isinstance(name, str) or not name.strip() or len(name) > 128:
             raise AdapterFailure(NOT_SENT, "no conversation or name for the card")
-        with self.flow:
-            address = self.addresses.get(chat)
-        if address is None:
-            self.list_chats()
+        # Nothing has gone out before the send, so a failure here is not sent.
+        try:
             with self.flow:
                 address = self.addresses.get(chat)
-        if not address:
-            raise AdapterFailure(NOT_SENT, "Messages records no address of ours for this chat")
-        folder = tempfile.mkdtemp(prefix="card-", dir=self.cards())
-        path = os.path.join(folder, card_filename(name) + ".vcf")
-        with open(path, "w", encoding="utf-8", newline="") as card:
-            card.write(vcard(name.strip(), address, photo if isinstance(photo, str) else None))
+            if address is None:
+                self.list_chats()
+                with self.flow:
+                    address = self.addresses.get(chat)
+            if not address:
+                raise AdapterFailure(NOT_SENT, "Messages records no address of ours for this chat")
+            folder = tempfile.mkdtemp(prefix="card-", dir=self.cards())
+            path = os.path.join(folder, card_filename(name) + ".vcf")
+            with open(path, "w", encoding="utf-8", newline="") as card:
+                card.write(vcard(name.strip(), address, photo if isinstance(photo, str) else None))
+        except AdapterFailure:
+            raise
+        except Exception as error:
+            raise AdapterFailure(NOT_SENT, f"the card was not written: {error}")
         return self.send({"conversation": chat, "attachments": [{"path": path}]})
 
     def cards(self):

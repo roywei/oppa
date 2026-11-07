@@ -297,7 +297,7 @@ impl Broker {
     /// The assistant's contact card in the current direct chat, with its face
     /// when it has one. The channel adds the address it is reached at there, so
     /// the host never guesses it. One card per chat, name and face: the key
-    /// holds all three, and the store keeps the first queued under it.
+    /// holds all three, and the store keeps the first card queued under it.
     pub(super) fn contact_card(&self, args: ContactCard) -> ToolCall {
         self.authorize(&args.context)?;
         let grant = &self.launch.grant;
@@ -341,17 +341,21 @@ impl Broker {
             "send:card:{}",
             digest(&(&conversation.id, name, face_digest)).map_err(|_| unavailable())?
         );
-        let receipt = self.journaled_effect("messages.contact_card", "outward", &args, || {
-            let files: Vec<String> = face
-                .iter()
-                .map(|face| face.to_string_lossy().into_owned())
-                .collect();
-            let files = self.outgoing_files(&files, &key)?;
-            let entry = store
-                .enqueue_contact(&conversation.id, &key, name, files)
-                .map_err(|_| unavailable())?;
-            Ok(json!({"outbox_id":entry.id}))
-        })?;
+        // The journal keys on the card too, so a new face in the same run is a
+        // new card, not the first one's receipt.
+        let request = (&args, &key);
+        let receipt =
+            self.journaled_effect("messages.contact_card", "outward", &request, || {
+                let files: Vec<String> = face
+                    .iter()
+                    .map(|face| face.to_string_lossy().into_owned())
+                    .collect();
+                let files = self.outgoing_files(&files, &key)?;
+                let entry = store
+                    .enqueue_contact(&conversation.id, &key, name, files)
+                    .map_err(|_| unavailable())?;
+                Ok(json!({"outbox_id":entry.id}))
+            })?;
         let id = receipt["receipt"]["outbox_id"]
             .as_i64()
             .ok_or_else(unavailable)?;
@@ -366,7 +370,9 @@ impl Broker {
             }
             _ => json!({"state":"queued","meaning":"It goes out when this turn ends."}),
         };
-        Ok(json!({"name":entry.event.body,"face":face.is_some(),"delivery":delivery}))
+        Ok(
+            json!({"name":entry.event.body,"face":!entry.event.attachments.is_empty(),"delivery":delivery}),
+        )
     }
 
     /// Copies of the files a message carries, where the host keeps them until

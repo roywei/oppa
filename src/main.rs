@@ -1219,7 +1219,7 @@ fn initialize(
     fs::write(paths.config_file(), toml::to_string_pretty(&config)?)?;
     fs::write(
         paths.private.join(".gitignore"),
-        "/vault/\n/knowledge\n/avatar.png\n/avatars/\n.env*\n*.key\n*.pem\n",
+        "/vault/\n/knowledge\n.env*\n*.key\n*.pem\n",
     )?;
     fs::create_dir(paths.private.join("evals"))?;
     git(paths, &["init", "--template=", "-b", "main"])?;

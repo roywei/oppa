@@ -269,8 +269,8 @@ pre-approved. Only you change the soul and the rules. Edit them on the
 dashboard, with `oppa memory put`, or by asking ("call yourself Mimi", "be more
 playful"). The assistant's face is a picture beside the vault:
 `oppa soul avatar <picture>` sets it, keeping the ones before, and the assistant
-sends its contact card, with that face, in its first reply to each person on
-iMessage. Ask for a new look and it draws four options through Codex, when
+sends its contact card, with that face, in its first reply to you and to each
+family member who writes to it directly on iMessage. Ask for a new look and it draws four options through Codex, when
 Codex is signed in with ChatGPT. The manual that ships with OPPA,
 `resources/manual/MANUAL.md`, is the same for every instance.
 

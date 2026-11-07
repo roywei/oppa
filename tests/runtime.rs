@@ -812,6 +812,39 @@ async fn the_soul_the_owners_profile_and_rules_reach_every_session_soul_first() 
 }
 
 #[tokio::test]
+async fn an_instance_from_before_the_soul_reads_its_persona_in_the_souls_place() {
+    // Review of 2026-11-07: setup wrote assistant/persona.md on every instance
+    // before the soul note. Until the soul is written it stands in the soul's
+    // place, so an upgrade keeps the assistant's name and voice; once the soul
+    // exists, the persona is not read.
+    let (dir, runtime) = fixture(|root| vec![agent(root, "first", -1, 0.0)]);
+    let vault = runtime.paths.vault();
+    fs::create_dir_all(vault.join("assistant")).unwrap();
+    fs::write(vault.join("assistant/persona.md"), "Your name is Juniper.").unwrap();
+    runtime
+        .turn("chat", "one", "Hello.", |_| Ok(()))
+        .await
+        .unwrap();
+    fs::write(vault.join("assistant/soul.md"), "Name: Mimi.").unwrap();
+    runtime
+        .turn("chat", "two", "Hello.", |_| Ok(()))
+        .await
+        .unwrap();
+    let requests = captured(dir.path(), "first");
+    let before = &context(&requests[0])["profiles"];
+    assert_eq!(
+        (before[0]["path"].as_str(), before[0]["text"].as_str()),
+        (Some("assistant/persona.md"), Some("Your name is Juniper."))
+    );
+    let after = context(&requests[1])["profiles"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0]["path"], "assistant/soul.md");
+}
+
+#[tokio::test]
 async fn a_new_owners_onboarding_note_is_a_fact_of_their_direct_chat_turns_only() {
     // Onboarding: what is left of getting to know a new owner reaches each of
     // the owner's turns in a direct chat, never a group's, and is not standing

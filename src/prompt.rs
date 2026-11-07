@@ -303,14 +303,21 @@ fn sweep(root: &Path) -> Result<()> {
 /// fails with the vault; a note the vault refuses to read is reported to the
 /// model instead of failing the turn.
 pub(crate) fn profiles(paths: &Paths, owner: &str) -> Vec<serde_json::Value> {
-    notes(
+    // An instance set up before the soul note keeps its name and voice in the
+    // persona note until the owner's turn writes the soul from it, so none
+    // loses them on upgrade.
+    let mut standing = notes(paths, [crate::soul::NOTE.to_string()]);
+    if standing.is_empty() {
+        standing = notes(paths, [crate::soul::BEFORE_SOUL.to_string()]);
+    }
+    standing.extend(notes(
         paths,
         [
-            crate::soul::NOTE.to_string(),
             format!("people/{owner}/profile.md"),
             "assistant/rules.md".to_string(),
         ],
-    )
+    ));
+    standing
 }
 
 /// Each of these notes that exists, bounded, or why it could not be read.

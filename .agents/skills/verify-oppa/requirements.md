@@ -54,7 +54,7 @@ the requirement they cover. P0 is essential, P1 important, P2 later.
 | M-1 | P0 | Chat logs complete and searchable in Chinese and English, with surrounding messages. |
 | M-2 | P0 | Memory as Markdown files the owner can open, edit and search without the assistant running. |
 | M-3 | P0 | Every change is a commit with author, source and reason; showable, revertible. |
-| M-4 | P0 | A small profile per person and household in every adult turn. |
+| M-4 | P0 | A small profile per person in every adult turn; every turn reads the assistant's soul, the owner's own profile (which covers the household) and the owner's rules. |
 | M-5 | P0 | Who said it, about whom, when, last verified, recheck date. One person's claim never overwrites another's statement. |
 | M-6 | P0 | Social context is memory. |
 | M-7 | P0 | Scopes: person, household, conversation, child, specialist, knowledge, domain, work. Adult runs read broadly; children and outside agents are isolated by the host. |
@@ -64,6 +64,7 @@ the requirement they cover. P0 is essential, P1 important, P2 later.
 | M-11 | P1 | Run records as procedural memory shared across agents; reused procedures become skills. |
 | M-12 | P1 | Daily gardening: dedupe, file, refresh profiles, recheck due facts. No speculation. |
 | M-13 | P2 | Domain records stay in their repositories; memory holds pointers and summaries. |
+| M-14 | P1 | The assistant's soul is the owner's: one note (name, look, languages, personality) read first in every turn and changed only in the owner's turn; its face is a picture the owner chose, kept with earlier faces, shown on the dashboard and sent as a contact card where the channel takes one. |
 | P-1 | P1 | Heartbeat: on a cadence in waking hours the chief of staff reviews what is new and decides act, suggest, note, or nothing. Most end in nothing. |
 | P-2 | P1 | Important events run the heartbeat early. |
 | P-3 | P1 | A suggestion says what prompted it, what it would do, and asks. Accepted ones can become standing work; declined ones are remembered. |

@@ -935,9 +935,10 @@ impl Store {
         let tx = Transaction::new_unchecked(&self.connection, TransactionBehavior::Immediate)?;
         let existing:Option<(i64,String)>=tx.query_row("SELECT o.id,e.payload_digest FROM outbox o JOIN events e ON e.seq=o.event_seq WHERE o.idempotency_key=?1",[idempotency_key],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
         let id = if let Some((id, stored_digest)) = existing {
-            // A reaction's key is its message's: the first one stands.
+            // A reaction's key is its message's, and a card's is its chat, name
+            // and face: the first one queued stands.
             ensure!(
-                stored_digest == digest || kind == "reaction",
+                stored_digest == digest || kind == "reaction" || kind == "contact",
                 "idempotency key reused with changed reply payload"
             );
             id

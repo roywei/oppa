@@ -309,9 +309,9 @@ impl Paths {
     }
     /// The assistant's face, beside the vault, which takes only Markdown notes.
     pub fn avatar(&self) -> PathBuf {
-        self.private.join("avatar.png")
+        self.avatars().join("face.png")
     }
-    /// Faces it had before, named by when each was replaced.
+    /// The face and the faces it had before, each named by when it was replaced.
     pub fn avatars(&self) -> PathBuf {
         self.private.join("avatars")
     }

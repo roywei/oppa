@@ -107,10 +107,11 @@ say "You can change any of this later by asking."
   "a watercolor fox"), "surprise me" (you choose from the name and
   personality), a picture of theirs, or none (initials until later). "The
   face" below says who draws it.
-- **What Claude Code and Codex remember.** May the assistant bring in what they
-  already know about the owner? It reads their memory files, keeps what lasts
-  in OPPA memory and never writes back to them. A yes starts with the first
-  chat; a no or no answer leaves the assistant to offer it once later.
+- **What Claude Code and Codex remember (full access).** May the assistant
+  bring in what they already know about the owner? It reads their memory files,
+  keeps what lasts in OPPA memory and never writes back to them. A yes starts
+  with the first chat; a no or no answer leaves the assistant to offer it once
+  later. Below full access it cannot read those files, so skip this.
 - **Household.** Does anyone else in the household run OPPA? If so, their name
   and their assistant's name.
 - **Channel.** Should the assistant answer on iMessage? It needs its own Apple ID
@@ -261,7 +262,8 @@ timeout_seconds = 60
 ```
 
 With Claude as the driver and Codex signed in with ChatGPT, also register Codex,
-for drawing and computer use:
+for drawing and computer use. Tell the owner it also answers when Claude cannot,
+for example when Claude's limit is reached:
 
 ```toml
 [[agents]]
@@ -362,7 +364,7 @@ Wait until they say it is done.
 **Owner click: the face in Messages (iMessage with a face only).** Messages on
 this Mac is signed in to the assistant's Apple ID. Open Messages, then
 Settings, and find Share Name and Photo; reveal the face with
-`open -R ~/.oppa-private/avatar.png`. Tell them: "Set the name to NAME, drag
+`open -R ~/.oppa-private/avatars/face.png`. Tell them: "Set the name to NAME, drag
 the picture onto the photo, and share with Contacts only." Check the labels on
 the screen before you name them: they move between macOS versions. Family
 phones then offer to show the face. The assistant also sends its own contact
@@ -430,7 +432,7 @@ read their answers. Do this only if the owner said yes in step 3.
    after each one. Tokens go through the clipboard, never through a chat.
    With a face, the owner uploads it as the app icon on the app's Basic
    Information page (Display Information); Slack has no API for that. Reveal
-   it with `open -R ~/.oppa-private/avatar.png`.
+   it with `open -R ~/.oppa-private/avatars/face.png`.
 2. **A room.** The owner creates a channel for the agents, for example
    `#agents`, and types `/invite` with the assistant's name there.
 3. **Each agent in Slack.** In each agent's own app, the owner connects it to
@@ -522,12 +524,16 @@ them, with `memory put` and `memory delete` against the current revision:
    and languages the old persona gave. Ask the owner only what you cannot read.
 2. Move standing preferences (units, calendars, how they like things done)
    into the owner's profile under "How OWNER likes things done", with their
-   sources and dates.
+   sources and dates. Fold `household/profile.md` and
+   `people/OWNER_ID/private/profile.md`, if either exists, into that profile too.
 3. Delete `assistant/persona.md` and any preferences note you emptied, and
    update `index.md`. Fix any skill that names a note you moved.
 
-Keep `assistant/rules.md` where it is: schedules may name it. Every chat starts
-a fresh session once afterwards, with its recent history, as after any release.
+Keep `assistant/rules.md` where it is: schedules may name it. Until the soul is
+written, every chat reads `assistant/persona.md` in its place, so nothing is lost
+in between; the assistant also writes the soul from it the first time the owner
+changes its name, voice or look. Every chat starts a fresh session once
+afterwards, with its recent history, as after any release.
 
 ## Switching the driver after setup
 

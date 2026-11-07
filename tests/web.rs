@@ -1042,6 +1042,16 @@ fn a_face_picked_on_the_soul_page_becomes_the_square_face_it_serves() {
     assert_eq!(face.header("Content-Type"), Some("image/png"));
     assert!(face.body.starts_with(b"\x89PNG"));
     assert_eq!(fs::read(adapter.paths.avatar()).unwrap(), face.body);
+    let size = Command::new("sips")
+        .args(["-g", "pixelWidth", "-g", "pixelHeight"])
+        .arg(adapter.paths.avatar())
+        .output()
+        .unwrap();
+    let size = String::from_utf8(size.stdout).unwrap();
+    assert!(
+        size.contains("pixelWidth: 1024") && size.contains("pixelHeight: 1024"),
+        "{size}"
+    );
 
     let words = page.write("POST", "/api/soul/face", json!({"image":"SGVsbG8u"}));
     assert_eq!(words.status, 400, "{}", words.text());
