@@ -15,7 +15,8 @@ own role. Your own turns are your harness as you set it up: every account, MCP
 server and plugin you connected there, your browser, and, with full access,
 this Mac's shell and files. It keeps your memory as Markdown in a private Git
 repository, keeps public knowledge in a separate wiki, runs reminders, briefings
-and background tasks, and looks in twice a day once something is connected.
+and background tasks, looks in during the day once something is connected, and
+improves its own skills overnight.
 
 It starts with almost nothing bundled and grows by building for you. Ask for
 something new, such as your lights or your car, and it writes the script and a
@@ -66,7 +67,7 @@ your messages in any case.
 
 To answer on another messaging surface, add a `[[channels]]` entry to the private
 `config.toml` naming an adapter command and the sender handles that are yours,
-then run `./target/debug/oppa serve`. The bundled adapters in
+then run `./target/release/oppa serve`. The bundled adapters in
 `resources/adapters` show the contract.
 
 The bundled iMessage adapter wraps `imsg rpc` (imsg 0.15 or later) on a Mac whose
@@ -129,7 +130,7 @@ account = "local"
 command = ["/usr/bin/python3", "/path/to/runtime/adapters/web.py",
            "--state", "/path/to/runtime/channels/web",
            "--home", "/path/to/runtime", "--private-dir", "/path/to/private",
-           "--port", "8765", "--source", "/path/to/oppa"]   # --source is optional
+           "--port", "8765"]
 ```
 
 and add `"web:owner"` to the `handles` of your owner entry in `[[people]]`.
@@ -161,8 +162,8 @@ timeout_seconds = 60   # the first call compiles the adapter once
 ```
 
 ```sh
-./target/debug/oppa connectors test          # access as this terminal, with a plain fix
-./target/debug/oppa connectors test --prompt # at the Mac: lets macOS ask for access
+./target/release/oppa connectors test          # access as this terminal, with a plain fix
+./target/release/oppa connectors test --prompt # at the Mac: lets macOS ask for access
 ```
 
 It reads at every `access` level. At `connectors` or `computer` it can also
@@ -214,6 +215,14 @@ what Claude Code and Codex already remember about you; after your yes it does so
 in the background, then every day at the time `[memory_sync] at` sets.
 `oppa memory sync` runs one batch at the console.
 
+Each night, half an hour before that sync, the assistant reviews the day's
+conversations and keeps what they taught as skills and memory, and may start a
+`self/<topic>` branch with a fix to its own code (at `computer`, with `source`
+set to this checkout); it never merges or installs one. It also sets the next
+day's heartbeat pace, 30 to 480 minutes, from how much your channels needed you.
+It sends nothing at night: the day's first heartbeat tells you what it improved
+and what waits on you. `oppa memory review` runs the review at the console.
+
 Memory is what is personal: you, your family and the people around you, your
 home, health and holdings. What you read and research (articles, filings,
 papers, and theses built on them) goes in a knowledge wiki of its own at
@@ -241,14 +250,15 @@ in config.toml must move to `oppa schedules add`; a configuration that still has
 them does not load. At `connectors` or `computer`, the assistant can also say
 something now in another chat it is in ("tell the family group dinner's at 7").
 
-Once anything is connected, such as your mail, the heartbeat runs by default
-twice a day, at 08:30 and 16:30, in your direct chat with the assistant. With
+Once anything is connected, such as your mail, the heartbeat runs in your direct
+chat with the assistant: by default twice a day, at 08:30 and 16:30, until the
+nightly review sets a pace. With
 nothing connected there is none. To change it, add it to config.toml and
 restart serve:
 
 ```toml
 [heartbeat]
-every_minutes = 60        # 5 to 1440, counted from waking_from; default 480
+every_minutes = 60        # 5 to 1440, counted from waking_from; default 480; the nightly pace overrides it
 waking_from = "08:00"     # local time of the day's first heartbeat; default 08:30
 waking_until = "21:00"    # none starts at or after this; default 21:00
 conversation = "imessage/assistant/<chat id>"   # optional: your direct chat, from `oppa conversations`
@@ -285,11 +295,11 @@ when it currently contains only synthetic examples. Real values never belong
 in this source tree.
 
 ```sh
-./target/debug/oppa history --conversation console
-./target/debug/oppa history --query 'meeting 时间'
-./target/debug/oppa outbox
-./target/debug/oppa memory revision
-./target/debug/oppa memory search 'preferences'
+./target/release/oppa history --conversation console
+./target/release/oppa history --query 'meeting 时间'
+./target/release/oppa outbox
+./target/release/oppa memory revision
+./target/release/oppa memory search 'preferences'
 ```
 
 `memory put` and `memory delete` take an explicit current revision, a source and
@@ -315,11 +325,11 @@ broker. Keeping interactive chat open allows it to present completed work while
 waiting for your next message. `chat --message` performs one turn and exits.
 
 ```sh
-./target/debug/oppa work
-./target/debug/oppa tasks list
-./target/debug/oppa tasks read TASK_ID
-./target/debug/oppa tasks stop TASK_ID
-./target/debug/oppa tasks present --conversation console
+./target/release/oppa work
+./target/release/oppa tasks list
+./target/release/oppa tasks read TASK_ID
+./target/release/oppa tasks stop TASK_ID
+./target/release/oppa tasks present --conversation console
 ```
 
 `work --once` claims at most one queued task. A queued task waits until a worker is
@@ -451,9 +461,7 @@ next model receives prior receipts. Pending writes, unmediated tool activity and
 incomplete telemetry stop automatic continuation for reconciliation. A transport write with uncertain delivery stays unknown;
 inspection does not resend it. Do not delete state to clear an uncertain action.
 
-The existing assistant's services and records are independent and untouched.
-This source build is not installed as a service. Safe updates, complete crash
-recovery and real channel delivery remain explicit acceptance work. Fresh sessions
+Fresh sessions
 receive up to 64 recent events within a 96 KiB event budget, plus profiles and
 explicit retrieval pointers. Large bodies and older messages remain in canonical
 storage and can be retrieved through tools. A turn's grant names its own

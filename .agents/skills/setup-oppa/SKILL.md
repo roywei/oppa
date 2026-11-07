@@ -75,9 +75,9 @@ Ask these together, with defaults filled in from what you can see:
   the service runs with either; with neither, setup ends at a reply in the
   terminal (step 4), and the owner talks through `oppa chat` with `oppa work`
   running beside it for background tasks.
-- **Dashboard (recommended).** A page on this Mac for web chat, access, the
-  assistant's personality and rules, scheduled jobs, and a developer view of the
-  feature map, progress and the assistant's own proposed changes.
+- **Dashboard (recommended).** A page on this Mac for web chat, scheduled jobs,
+  access, the assistant's personality and rules, people, and a developer view of
+  the instance's health.
 - **Accounts.** Mail, calendar, files, brokerage and anything else come from the
   harness itself, not from OPPA: whatever the owner connects in Claude
   (claude.ai Settings, Connectors, or `claude mcp add`) or Codex (its apps and
@@ -151,10 +151,9 @@ command = ["/usr/bin/python3", "R/adapters/apple.py"]
 timeout_seconds = 60
 ```
 
-For the assistant to propose changes to itself and for the dashboard's
-developer view, also add a top-level `source = "/path/to/this/checkout"` line
-above every table, and `"--source", "/path/to/this/checkout"` at the end of the
-web channel's `command`.
+For the assistant to propose changes to itself on a `self/` branch (full access
+only), also add a top-level `source = "/path/to/this/checkout"` line above every
+table.
 
 Include only what the owner chose; `init` already wrote their `access`, the
 browser, the secrets connector for their vault, a daily `[memory_sync]` and the
@@ -279,10 +278,10 @@ up with them there, in Messages.
 
 Tell the owner:
 
-- **Upgrade:** `git pull && cargo build --release --locked && ./target/release/oppa service install && ~/.oppa/bin/oppa service start`.
-  The launcher is kept, so grants survive. If `install` reports
-  `grant_again: true`, the launcher was new, and steps 6 and 7 need repeating.
-  If a harness CLI moves, `~/.oppa/bin/oppa service uninstall` then `install` refreshes the
+- **Upgrade:** `git pull && cargo build --release --locked && ./target/release/oppa service upgrade`,
+  from a terminal. It tries the build on a copy of the instance first and puts
+  the previous build back if the service does not keep running. The launcher is
+  kept, so grants survive. If a harness CLI moves, `~/.oppa/bin/oppa service uninstall` then `install` refreshes the
   agents' PATH.
 - **Pause:** `~/.oppa/bin/oppa service stop`. It starts again at the next login.
 - **Remove:** `~/.oppa/bin/oppa service uninstall`. It keeps the binaries and every record.
