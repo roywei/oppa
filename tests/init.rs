@@ -683,3 +683,39 @@ fn init_at_a_terminal_asks_where_to_talk_and_writes_the_answers() {
     assert!(config.memory_sync.is_none());
     assert!(screen.contains("full/connectors/read") && screen.contains("browser"));
 }
+
+// X-6/X-7: Python alone cannot run a subscription harness. Diagnose the
+// missing CLI before asking a new owner to chat; never invoke a login here.
+#[test]
+fn doctor_checks_the_selected_native_cli_not_just_python() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let runtime = dir.path().join("runtime");
+    let private = dir.path().join("private");
+    assert_success(&oppa_init(&runtime, &private).output().unwrap());
+    let bin = dir.path().join("bin");
+    fs::create_dir(&bin).unwrap();
+    std::os::unix::fs::symlink("/usr/bin/python3", bin.join("python3")).unwrap();
+    let doctor = || {
+        clean_command(env!("CARGO_BIN_EXE_oppa"))
+            .args(["--home", runtime.to_str().unwrap(), "--private-dir", private.to_str().unwrap(), "doctor"])
+            .env("PATH", &bin)
+            .output().unwrap()
+    };
+    let check = |output: &Output| {
+        let checks: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        checks.as_array().unwrap().iter()
+            .find(|c| c["check"] == "harness_cli").expect("native CLI readiness check").clone()
+    };
+    let missing = doctor();
+    assert_eq!(check(&missing)["ready"], false);
+    assert_eq!(check(&missing)["program"], "codex");
+    assert!(!missing.status.success());
+    let cli = bin.join("codex");
+    fs::write(&cli, "#!/bin/sh\nexit 99\n").unwrap();
+    fs::set_permissions(&cli, fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(check(&doctor())["ready"], false, "non-executable is not ready");
+    fs::set_permissions(&cli, fs::Permissions::from_mode(0o755)).unwrap();
+    let present = doctor();
+    assert_eq!(check(&present)["ready"], true, "readiness must not run the CLI or require Claude");
+}
