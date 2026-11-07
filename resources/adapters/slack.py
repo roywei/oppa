@@ -5,7 +5,7 @@ One Slack app the owner creates from the manifest link `--login-link` prints car
 - the bot token (xoxb-) receives and answers: the owner's direct chat with the app, and every channel the
   app is invited to, such as a room the owner shares with other agents;
 - the app-level token (xapp-) opens the Socket Mode connection, so nothing on this Mac listens for Slack;
-- the user token (xoxp-) names the owner, whose handle the login registers.
+- the user token (xoxp-, only users:read) names the owner, whose handle the login registers.
 
 `ask` hands the owner's other agents a request as this app and reads their replies. Agents skip app posts, so
 they find these requests by checking the channel on a schedule the owner set up with each of them.
@@ -69,7 +69,7 @@ SAID = {None, "thread_broadcast", "file_share", "bot_message", "me_message"}
 MANIFEST_SCOPES = {
     "bot": ["chat:write", "im:history", "im:read", "channels:history", "channels:read", "groups:history",
             "groups:read", "mpim:history", "mpim:read", "users:read"],
-    "user": ["chat:write"],
+    "user": ["users:read"],
 }
 
 
@@ -777,7 +777,7 @@ def main():
     parser.add_argument("--clipboard", default="/usr/bin/pbpaste", help="command that prints the clipboard")
     parser.add_argument("--login-activate", action="store_true", help="use the checked tokens, then exit")
     commands = parser.add_subparsers(dest="command")
-    asking = commands.add_parser("ask", help="post as the owner and wait for replies")
+    asking = commands.add_parser("ask", help="post as this app to other agents and wait for their replies")
     asking.add_argument("--channel", required=True)
     asking.add_argument("--text", required=True)
     asking.add_argument("--mention", action="append", default=[], help="a member to @mention, by name")

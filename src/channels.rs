@@ -305,7 +305,7 @@ pub fn wechat_login(paths: &Paths, step: Login, base_url: Option<&str>) -> Resul
 }
 
 /// Slack through an app the owner makes from a manifest link: its bot
-/// answers, and `ask` posts as the owner to hand other agents a request.
+/// answers, and `ask` posts as it to hand the owner's other agents a request.
 /// `api_url` replaces Slack's Web API, for a synthetic server.
 pub fn slack(paths: &Paths, api_url: Option<&str>) -> ChannelManifest {
     let mut args = vec![

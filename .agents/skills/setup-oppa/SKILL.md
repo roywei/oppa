@@ -274,8 +274,8 @@ Done means a reply reached their phone and the history shows it delivered.
 Anything short of that, say plainly what is missing.
 
 That first reply introduces the assistant by name and asks which language to
-use. Tell the owner they can close the terminal: the assistant finishes setting
-up with them there, in Messages.
+use. Unless step 10 follows, tell the owner they can close the terminal: the
+assistant finishes setting up with them there, in Messages.
 
 ## 10. Slack and the owner's other agents (optional)
 
@@ -309,7 +309,7 @@ read their answers. Do this only if the owner said yes in step 3.
    > older posts, and answer each post only once.
 
    Use 5 minutes, or the shortest interval the agent's schedule limit allows
-   (ChatGPT allows about 6 scheduled runs an hour, so use 10).
+   (one owner's ChatGPT allowed 6 scheduled runs an hour, so 10).
 5. **Tell the assistant.** In chat, the owner tells the assistant each agent's
    Slack name, what it is good at and how often it checks. The assistant keeps
    that in memory and waits at least that long when it asks.

@@ -75,8 +75,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             message = {'type': 'message', 'channel': channel, 'channel_type': 'im' if channel.startswith('D') else 'channel',
                        'text': args['text'], 'ts': ts}
             if args.get('thread_ts'): message['thread_ts'] = args['thread_ts']
-            # As real Slack does, a post made with the app's user token still carries the app's bot id.
-            message.update({'user': 'U_BOT' if kind == 'bot' else 'U_OWNER', 'bot_id': 'B_OPPA', 'app_id': 'A_OPPA'})
+            message.update({'user': 'U_BOT', 'bot_id': 'B_OPPA', 'app_id': 'A_OPPA'})
             threads.setdefault(args.get('thread_ts') or ts, []).append(message)
             drop(message)
             if '<@U_GROK>' in args['text']:
@@ -667,7 +666,7 @@ fn channels_add_slack_keeps_each_copied_token_and_registers_the_owner() {
     assert_eq!(manifest["settings"]["socket_mode_enabled"], true);
     assert_eq!(
         manifest["oauth_config"]["scopes"]["user"],
-        json!(["chat:write"])
+        json!(["users:read"])
     );
 
     assert_eq!(token("just some text")["status"], "no_token");
