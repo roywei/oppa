@@ -513,6 +513,9 @@ pub struct ChannelDelivery {
     pub client: ChannelClient,
     pub native_conversation: String,
     pub paths: Paths,
+    /// The bubble's wanted state, which one task hands to the adapter in
+    /// order, latest first, so a slow channel never holds up a turn.
+    pub typing: Option<tokio::sync::watch::Sender<bool>>,
 }
 
 impl Deliver for ChannelDelivery {
@@ -551,9 +554,24 @@ impl Deliver for ChannelDelivery {
     }
 
     fn typing(&mut self, on: bool) -> impl Future<Output = ()> {
-        let client = self.client.clone();
-        let conversation = self.native_conversation.clone();
-        async move { client.typing(&conversation, on).await }
+        if !self.client.capabilities.typing {
+            return std::future::ready(());
+        }
+        let wanted = self.typing.get_or_insert_with(|| {
+            let (wanted, mut changes) = tokio::sync::watch::channel(false);
+            let client = self.client.clone();
+            let conversation = self.native_conversation.clone();
+            tokio::spawn(async move {
+                while changes.changed().await.is_ok() {
+                    let on = *changes.borrow_and_update();
+                    client.typing(&conversation, on).await;
+                }
+            });
+            wanted
+        });
+        // A refresh while on is sent again, though the value is unchanged.
+        wanted.send_replace(on);
+        std::future::ready(())
     }
 }
 
@@ -1085,6 +1103,7 @@ fn spawn_worker(
                 client,
                 native_conversation,
                 paths: paths.clone(),
+                typing: None,
             };
             // Turns of messages that wait for the other assistant, and looks
             // about newcomers, each due at a time. The worker keeps taking jobs

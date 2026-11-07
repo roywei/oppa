@@ -343,15 +343,20 @@ time later when they ask.
 3. **The adapter starts the helper.** Look at the iMessage channel in
    `~/.oppa-private/config.toml`: its command must end with `--launch-bridge`.
    New installs have it; on an older one, add it, with the owner's yes. Then
-   `~/.oppa/bin/oppa service stop` and `~/.oppa/bin/oppa service start`. On each
-   start, if the helper is not running, the adapter restarts Messages with it,
-   so it comes back by itself after every reboot.
+   `~/.oppa/bin/oppa service stop` and `~/.oppa/bin/oppa service start`. If the
+   helper is not running, the adapter restarts Messages with it, once per boot,
+   so it comes back by itself after a reboot.
 4. **Prove it.** `~/.oppa/channels/imsg-bridge/imsg status` must show
    "Advanced features ... Available - IMCore bridge connected" and bridge
    version v2. Then the owner texts the assistant something worth a reaction,
    such as "I got the job!". Done means they saw the typing bubble and the
    reply, and a tapback if the assistant chose one; `oppa history` shows a
    tapback as a `reaction` event, delivered only once Messages showed it.
+
+   If the status still says the bridge is not connected, macOS refused the
+   helper even with SIP off, which newer macOS versions can do. Do not retry or
+   loosen other protections: tell the owner tapbacks and typing are not
+   available on this Mac, and that the assistant answers in words as before.
 
 To turn it off, the owner runs `csrutil enable` the same way in step 2. The
 assistant goes back to words only.

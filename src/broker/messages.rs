@@ -90,7 +90,7 @@ pub(super) fn definitions(grant: &RunGrant, context: &Value) -> Vec<Value> {
     }
     // A conversation turn reacts; a delegated task or heartbeat has no one to react to.
     if grant.task_access == TaskAccess::Manage {
-        tools.push(tool("messages.react", "React to a message in the current conversation with a tapback (love ❤️, like 👍, dislike 👎, laugh 😂, emphasize ‼️, question ❓), as a friend would: instead of a reply that would say only as much, or beside one. Name the message by its event_seq. A message takes one reaction from you, and the first is final: asking again returns that one. It goes out when this turn ends; a channel without reactions refuses it.", json!({"context":context,"event_seq":{"type":"integer"},"reaction":{"type":"string","enum":REACTIONS}}), &["context","event_seq","reaction"], false));
+        tools.push(tool("messages.react", "React to a message in the current conversation with a tapback (love ❤️, like 👍, dislike 👎, laugh 😂, emphasize ‼️, question ❓), as a friend would: instead of a reply that would say only as much, or beside one. Name the message by its event_seq. A message takes one reaction from you, and the first is final, even one the channel refused: asking again returns that one. It goes out when this turn ends; a channel without reactions refuses it.", json!({"context":context,"event_seq":{"type":"integer"},"reaction":{"type":"string","enum":REACTIONS}}), &["context","event_seq","reaction"], false));
     }
     if grant.task_access != TaskAccess::Manage || grant.access.is_read() {
         return tools;
@@ -257,24 +257,19 @@ impl Broker {
         if self.on_owners_account(&conversation.channel, &conversation.account) {
             return Err(owners_account());
         }
-        // One reaction per message, ever: the key is the message's own.
+        // One reaction per message, ever: the key is the message's own, and
+        // the store keeps the first queued under it.
         let key = format!("send:react:{}", target.seq);
-        let earlier = store.outbox_by_key(&key).map_err(|_| unavailable())?;
-        let entry = match earlier {
-            Some(entry) => entry,
-            None => {
-                let receipt = self.journaled_effect("messages.react", "outward", &args, || {
-                    let entry = store
-                        .enqueue_reaction(&target.conversation, &key, target.seq, &args.reaction)
-                        .map_err(|_| unavailable())?;
-                    Ok(json!({"outbox_id":entry.id}))
-                })?;
-                let id = receipt["receipt"]["outbox_id"]
-                    .as_i64()
-                    .ok_or_else(unavailable)?;
-                store.outbox_entry(id).map_err(|_| unavailable())?
-            }
-        };
+        let receipt = self.journaled_effect("messages.react", "outward", &args, || {
+            let entry = store
+                .enqueue_reaction(&target.conversation, &key, target.seq, &args.reaction)
+                .map_err(|_| unavailable())?;
+            Ok(json!({"outbox_id":entry.id}))
+        })?;
+        let id = receipt["receipt"]["outbox_id"]
+            .as_i64()
+            .ok_or_else(unavailable)?;
+        let entry = store.outbox_entry(id).map_err(|_| unavailable())?;
         let delivery = match entry.state {
             DeliveryState::Sent => json!({"state":"sent"}),
             DeliveryState::Unknown => {

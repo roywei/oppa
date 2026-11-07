@@ -18,7 +18,9 @@ host records that as an edit, as it does a changed row in a restart's overlap.
 
 Tapbacks (`react`) and the typing bubble (`typing`) need imsg's bridge: a helper
 inside Messages, which runs only with SIP off and Messages started by `imsg
-launch`. Without it the adapter claims neither, and text works as before. Only
+launch`. The adapter claims them when the helper runs or it may start it
+(--launch-bridge with SIP off, once per boot); each call checks the helper again
+and is refused as not sent while it is down. Text works the same either way. Only
 the six classic tapbacks: imsg cannot send a custom emoji one. A tapback is a
 receipt only once history shows a new reaction of ours of that kind on the message.
 
@@ -51,6 +53,8 @@ EDIT_WINDOW_SECONDS = 20 * 60
 HISTORY_ROWS = 800
 # The tapbacks imsg's bridge sends.
 TAPBACKS = ("love", "like", "dislike", "laugh", "emphasize", "question")
+# History names a sent "emphasize" as "emphasis".
+READ_AS = {"emphasize": "emphasis"}
 # imsg reports these before any dispatch: invalid params, database unavailable.
 IMSG_NOT_DISPATCHED = (-32602, -32002)
 
@@ -197,6 +201,7 @@ class Adapter:
         # Chat GUID -> chat.db row id, which imsg's history reads by.
         self.chat_ids = {}
         self.tapbacks = self.typing_ok = False
+        self.bridge_up = None
         command = [options.imsg, "rpc"] + (["--db", options.db] if options.db else [])
         self.imsg = Imsg(command, self.notification, self.imsg_exited)
 
@@ -269,25 +274,58 @@ class Adapter:
 
     def bridge(self, status):
         """Tapbacks and typing go through imsg's helper inside Messages, which needs
-        SIP off and Messages started by `imsg launch`. With --launch-bridge and SIP
-        off, a bridge that is down is started once; Messages restarts. Either way
-        the channel claims only what the bridge can do now."""
-        if self.options.launch_bridge and not bridge_ready(status) and sip_disabled():
-            try:
-                subprocess.run([self.options.imsg, "launch"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, timeout=60)
-            except (OSError, subprocess.SubprocessError):
-                pass
-            deadline = time.monotonic() + 15
-            while not bridge_ready(status) and time.monotonic() < deadline:
-                time.sleep(1)
-                status = self.imsg.call("status")
-        ready = bridge_ready(status)
+        SIP off and Messages started by `imsg launch`. The channel claims them when
+        the helper runs or this adapter may start it; each call checks it again."""
         methods = set(status.get("methods") or [])
-        selectors = ((status.get("bridge") or {}).get("selectors")) or {}
-        self.tapbacks = ready and "tapback" in methods and "messages.history" in methods and selectors.get("sendReaction") is True
-        self.typing_ok = ready and "typing" in methods and selectors.get("typing") is True
+        self.observe_bridge(status)
+        possible = self.bridge_up is not None or (self.options.launch_bridge and sip_disabled())
+        self.tapbacks = possible and {"tapback", "messages.history"} <= methods
+        self.typing_ok = possible and "typing" in methods
+        if self.tapbacks or self.typing_ok:
+            threading.Thread(target=self.watch_bridge, daemon=True).start()
         return status
+
+    def observe_bridge(self, status):
+        """What the helper can do now: its selectors when ready, else None."""
+        selectors = (status.get("bridge") or {}).get("selectors")
+        self.bridge_up = (selectors if isinstance(selectors, dict) else {}) if bridge_ready(status) else None
+
+    def watch_bridge(self):
+        """Start the helper when it is down, at most once per boot, since starting it
+        restarts Messages and a Mac that rejects it would otherwise do so on every
+        start; then read its state every half minute."""
+        while not self.closing:
+            if self.bridge_up is None and self.options.launch_bridge and self.first_launch_this_boot():
+                try:
+                    subprocess.run([self.options.imsg, "launch"], stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+                except (OSError, subprocess.SubprocessError):
+                    pass
+                time.sleep(5)
+            try:
+                self.observe_bridge(self.imsg.call("status", timeout=10))
+            except Exception:
+                self.bridge_up = None
+            time.sleep(self.options.bridge_poll)
+
+    def first_launch_this_boot(self):
+        if not sip_disabled():
+            return False
+        try:
+            boot = subprocess.run(["/usr/sbin/sysctl", "-n", "kern.boottime"], capture_output=True,
+                                  text=True, timeout=10).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return False
+        marker = os.path.join(self.options.state, "bridge-launched")
+        try:
+            with open(marker) as handle:
+                if handle.read() == boot:
+                    return False
+        except OSError:
+            pass
+        with open(marker, "w") as handle:
+            handle.write(boot)
+        return True
 
     def health(self, _params):
         status = self.imsg.call("status", timeout=10)
@@ -295,7 +333,7 @@ class Adapter:
         return {"ok": bool(database.get("ready")) and self.subscription is not None,
                 "imsg_version": status.get("version"), "cursor": self.state.cursor,
                 "edits": self.reread_error or "watched",
-                "bridge": "ready" if bridge_ready(status) else "off: tapbacks and typing are not sent"}
+                "bridge": "ready" if self.bridge_up is not None else "off: tapbacks and typing are not sent"}
 
     def send(self, params):
         chat = params.get("conversation")
@@ -340,6 +378,8 @@ class Adapter:
         chat, target, kind = params.get("conversation"), params.get("message"), params.get("reaction")
         if not (bounded(chat) and bounded(target)) or kind not in TAPBACKS:
             raise AdapterFailure(NOT_SENT, "no conversation, message or known reaction")
+        if not (self.bridge_up or {}).get("sendReaction"):
+            raise AdapterFailure(NOT_SENT, "imsg's bridge is not running, so Messages takes no tapbacks now")
         chat_id = self.chat_id(chat)
         before = self.own_reactions(chat_id, target) if chat_id is not None else None
         if before is None:
@@ -358,7 +398,7 @@ class Adapter:
                 now = self.own_reactions(chat_id, target) or {}
             except Exception:
                 now = {}
-            new = [rowid for rowid, seen in now.items() if seen == kind and rowid not in before]
+            new = [rowid for rowid, seen in now.items() if seen == READ_AS.get(kind, kind) and rowid not in before]
             if new:
                 return {"native_id": f"reaction:{max(new)}"}
             if time.monotonic() >= deadline:
@@ -392,8 +432,8 @@ class Adapter:
         """The typing bubble, while the host composes a reply. Best effort: a
         failure only means no bubble."""
         chat = params.get("conversation")
-        if not bounded(chat) or not self.typing_ok:
-            raise AdapterFailure(NOT_SENT, "no conversation, or no typing on this Mac")
+        if not bounded(chat) or not (self.bridge_up or {}).get("typing"):
+            raise AdapterFailure(NOT_SENT, "no conversation, or imsg's bridge is not running")
         self.imsg.call("typing", {"chat_guid": chat, "typing": params.get("on") is True}, timeout=5)
         return {}
 
@@ -648,6 +688,7 @@ def main():
     parser.add_argument("--overlap", type=int, default=20, help="ROWIDs replayed after a restart")
     parser.add_argument("--launch-bridge", action="store_true",
                         help="with SIP off, start imsg's Messages helper when it is down, restarting Messages")
+    parser.add_argument("--bridge-poll", type=interval, default=30.0, help="seconds between reads of the bridge's state")
     parser.add_argument("--edit-poll", type=interval, default=5.0, help="seconds between reads of recently active chats for edits")
     Adapter(parser.parse_args()).serve()
 

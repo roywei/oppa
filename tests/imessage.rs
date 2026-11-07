@@ -105,7 +105,8 @@ for line in sys.stdin:
         with lock:
             for row in rows:
                 if row['guid'] == params['message_guid'] and 'UNSEEN' not in row.get('text', ''):
-                    row.setdefault('reactions', []).append({'id': 9000 + len(row['reactions']), 'type': params['kind'], 'is_from_me': True})
+                    kind = {'emphasize': 'emphasis'}.get(params['kind'], params['kind'])  # imsg's history names
+                    row.setdefault('reactions', []).append({'id': 9000 + len(row['reactions']), 'type': kind, 'is_from_me': True})
             rows_path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
         emit({'jsonrpc': '2.0', 'id': rid, 'result': {'ok': True}})
     elif method == 'typing':
@@ -858,7 +859,7 @@ fn a_group_message_names_its_members_and_a_direct_one_does_not() {
     );
 }
 
-/// A harness that acts like a model given "Dinner at 7?": it likes the message
+/// A harness that acts like a model given "Dinner at 7?": it emphasizes the message
 /// through the broker, then tries a second reaction on it, one iMessage has no
 /// tapback for and one on an event that is not a message, and answers.
 const REACTOR: &str = r#"
@@ -882,7 +883,7 @@ def react(seq, reaction):
         return 'error'
     return result['structuredContent']['reaction'] + ':' + result['structuredContent']['delivery']['state']
 seq = context['trigger_event']['seq']
-outcomes = [react(seq, 'like'), react(seq, 'love'), react(seq, 'fire'), react(seq + 1000, 'love')]
+outcomes = [react(seq, 'emphasize'), react(seq, 'love'), react(seq, 'fire'), react(seq + 1000, 'love')]
 mcp.stdin.close(); mcp.wait(timeout=5)
 print(json.dumps({'type': 'activity', 'kind': 'effect'}))
 print(json.dumps({'type': 'answer', 'text': 'See you then. ' + ' '.join(outcomes)}))
@@ -928,7 +929,7 @@ fn lines(path: PathBuf) -> Vec<Value> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_turn_likes_a_message_once_and_the_tapback_is_confirmed_by_reading_it_back() {
+async fn a_turn_reacts_to_a_message_once_and_the_tapback_is_confirmed_by_reading_it_back() {
     // B-6: reactions are expression. The owner asked on 2026-11-07 for iMessage
     // tapbacks and the typing bubble, through imsg's bridge. A model turn reacts
     // through the broker; the first reaction on a message is final; serve hands
@@ -948,7 +949,7 @@ async fn a_turn_likes_a_message_once_and_the_tapback_is_confirmed_by_reading_it_
     settle().await;
     assert_eq!(
         lines(fixture.root.path().join("messages/tapbacks.jsonl")),
-        vec![json!({"chat_guid":DM,"message_guid":"G101","kind":"like"})]
+        vec![json!({"chat_guid":DM,"message_guid":"G101","kind":"emphasize"})]
     );
     let events = fixture.transcript(DM);
     let kinds: Vec<_> = events.iter().map(|e| e.kind.as_str()).collect();
@@ -956,9 +957,10 @@ async fn a_turn_likes_a_message_once_and_the_tapback_is_confirmed_by_reading_it_
     assert_eq!(kinds, ["message", "reaction", "message"]);
     assert_eq!(
         events[2].body,
-        "See you then. like:queued like:queued error error"
+        "See you then. emphasize:queued emphasize:queued error error"
     );
-    assert_eq!(events[1].body, "like");
+    // History names it "emphasis"; the review of 2026-11-07 found that unconfirmed.
+    assert_eq!(events[1].body, "emphasize");
     assert_eq!(
         events[1].reply_to.as_deref(),
         Some(&*events[0].seq.to_string())
@@ -1018,15 +1020,12 @@ async fn without_the_bridge_no_tapback_or_typing_is_attempted_and_text_still_wor
         })
         .await;
     settle().await;
-    let store = fixture.store();
-    let reaction = fixture
-        .transcript(DM)
-        .into_iter()
-        .find(|e| e.kind == "reaction")
-        .unwrap();
-    let entry = store
-        .outbox_by_key(&format!("send:react:{}", reaction.reply_to.unwrap()))
+    let entry = fixture
+        .store()
+        .pending_outbox()
         .unwrap()
+        .into_iter()
+        .find(|entry| entry.event.kind == "reaction")
         .unwrap();
     assert_eq!(entry.attempts, 1);
     assert_eq!(

@@ -1076,9 +1076,11 @@ impl Runtime {
                         .is_dir()
                         .then(|| files.dir.to_string_lossy().into()),
                 };
-                // Someone wrote, so the bubble shows while the turn composes; a
-                // schedule or heartbeat may end silent and shows none.
-                let typing = matches!(input.kind.as_str(), "message" | "edit");
+                // Someone wrote in a direct chat, so the bubble shows while the
+                // turn composes. A group turn often ends silent, and so may a
+                // schedule or heartbeat: those show none.
+                let typing = matches!(input.kind.as_str(), "message" | "edit")
+                    && self.store.conversation(conversation)?.kind == "dm";
                 let run = harness::run(agent, &request);
                 tokio::pin!(run);
                 let outcome = loop {

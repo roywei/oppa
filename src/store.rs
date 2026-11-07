@@ -881,7 +881,8 @@ impl Store {
     }
 
     /// A tapback on message `target`: an outbound `reaction` event whose body
-    /// names the reaction, delivered through the outbox like a reply.
+    /// names the reaction, delivered through the outbox like a reply. A message
+    /// takes one: the first queued under `idempotency_key` wins, whatever it is.
     pub fn enqueue_reaction(
         &self,
         conversation: &str,
@@ -921,8 +922,9 @@ impl Store {
         let tx = Transaction::new_unchecked(&self.connection, TransactionBehavior::Immediate)?;
         let existing:Option<(i64,String)>=tx.query_row("SELECT o.id,e.payload_digest FROM outbox o JOIN events e ON e.seq=o.event_seq WHERE o.idempotency_key=?1",[idempotency_key],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
         let id = if let Some((id, stored_digest)) = existing {
+            // A reaction's key is its message's: the first one stands.
             ensure!(
-                stored_digest == digest,
+                stored_digest == digest || kind == "reaction",
                 "idempotency key reused with changed reply payload"
             );
             id
@@ -934,19 +936,6 @@ impl Store {
         };
         tx.commit()?;
         self.outbox_entry(id)
-    }
-
-    /// The outbox entry queued under `idempotency_key`, if any.
-    pub fn outbox_by_key(&self, idempotency_key: &str) -> Result<Option<OutboxEntry>> {
-        let id: Option<i64> = self
-            .connection
-            .query_row(
-                "SELECT id FROM outbox WHERE idempotency_key=?1",
-                [idempotency_key],
-                |r| r.get(0),
-            )
-            .optional()?;
-        id.map(|id| self.outbox_entry(id)).transpose()
     }
 
     pub fn outbox_entry(&self, id: i64) -> Result<OutboxEntry> {
