@@ -3209,7 +3209,8 @@ def drive_web_chat(inst: Instance):
     the owner's handles; a web channel init wrote is then answered by a real model through `oppa serve`."""
     agent = inst.state["agent"]
     asked = Instance(inst.root / "web-chat-asked")
-    terminal = init_at_terminal(asked, agent, ["", "+15555550123, owner@example.com"])
+    # Browser, web chat, iMessage handles, then optional 1Password vault.
+    terminal = init_at_terminal(asked, agent, ["", "", "+15555550123, owner@example.com", ""])
     assert "web chat" in terminal and "iMessage" in terminal, "init at a terminal did not ask where to talk"
     # The system Python has no TOML reader; doctor below proves the file loads.
     text = (asked.root / "private" / "config.toml").read_text()

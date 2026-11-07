@@ -12,7 +12,10 @@ permission clicks, and one text from their phone. Batch the questions into one
 round. The owner may never have used a terminal: say what you are doing in
 plain words, and never ask them to type a command.
 
-Setup ends at the first reply on their phone. Everything else, such as which
+Setup ends at the first reply on their chosen channel (phone, dashboard or
+terminal). Write the onboarding note before that handoff, with choices already
+made and any optional setup still pending, so OPPA does not ask them again.
+Everything else, such as which
 language to reply in, the household, importing what Claude Code and Codex
 remember and the abilities they have not tried, the assistant takes up itself
 in chat, one thing at a time, from the onboarding note you write in step 5.
@@ -48,11 +51,38 @@ Check each; install only after saying what you will install.
 | --- | --- | --- |
 | Rust 1.89+ | `cargo --version` | `brew install rust`, or rustup |
 | System Python and command line tools | `/usr/bin/python3 --version`, `xcode-select -p` | `xcode-select --install` (the owner clicks Install) |
-| A signed-in harness | `claude --version` or `codex --version` | the owner signs in once; step 4 proves it |
+| One signed-in CLI | Codex: `codex --version` and `codex login status`; Claude: `claude --version` | use the owner's chosen subscription; see below |
 | imsg 0.15+ (only for iMessage) | `imsg --version` | Homebrew's tap can be older. Download the latest release from github.com/openclaw/imsg into `~/.oppa/channels/imsg-bridge/` after step 4, keeping its helper files beside it |
 
-The harness is the CLI you are running in, if it is Claude Code or Codex. The
-assistant's own turns are that harness as the owner set it up: every account,
+For a new instance, use the coding agent performing this setup as the driver:
+Claude Code selects `claude`; Codex selects `codex`. Pass that selection explicitly
+to `oppa init --agent`; do not rely on the CLI's unattended default. Having both
+CLIs installed does not change this choice. Ask only if you cannot identify the
+setup agent, or the owner wants a different driver.
+
+For an existing instance, preserve its configured driver, even if a different
+coding agent handles this repair or upgrade. Change it only at the owner's request.
+Each path needs only its own subscription and CLI. Do not infer CLI availability
+or sign-in from an open desktop app.
+
+For Codex, run `codex --version` and `codex login status`. If the CLI is missing,
+install it with `brew install --cask codex` after saying what you will install.
+If it is signed out, run `codex login` in an interactive terminal and let the
+owner complete **Sign in with ChatGPT** in their browser. If the browser callback
+fails, use `codex login --device-auth` when their account allows device login.
+Check status again: it must say ChatGPT for subscription use. If it says API key,
+explain that OPPA requires subscription sign-in and let the owner choose whether
+to switch; never silently log them out or request an API key.
+
+Keep the CLI's credential store in place; never read or copy its tokens.
+Subscription limits and model availability still apply. A first real OPPA turn
+proves access; a version or login-status check alone does not.
+See [OpenAI authentication](https://learn.chatgpt.com/docs/auth).
+Use the same macOS login for setup and the service. The service uses the default
+`~/.codex` home; if the CLI uses a custom `CODEX_HOME`, resolve that difference
+before installing, rather than copying credentials into another home.
+
+The assistant's own turns are that harness as the owner set it up: every account,
 MCP server, plugin and skill they connected there is the assistant's too.
 
 ## 3. Ask once
@@ -122,22 +152,38 @@ Ask these together, with defaults filled in from what you can see:
 - **Model and effort**, if they care: the harness's default model at `medium`
   effort unless they name others (`--model`, `--effort low|medium|high|xhigh|max`).
   Hard work goes to a high-effort subagent either way.
-- **Harness**, only if both CLIs are signed in.
+- **Driver**, only if the setup agent is unknown or the owner wants a different one.
 
 ## 4. Build, create and prove a reply
 
+Build an installation from a clean detached worktree at the chosen pushed
+commit. Other sessions may change a shared checkout while you build. Confirm
+`git status --short` is empty and record `git rev-parse HEAD` before building.
+For development tests, use the disposable `verify-oppa` instance instead of
+installing the branch as the owner's service.
+
 ```sh
 cargo build --release --locked
-$B init --agent claude --access full --vault OPPA --web --imessage +15555550100,owner@example.com
-# the harness, access, vault and channels the owner chose: drop --vault, --web or
-# --imessage if declined; add --no-browser, --model, --effort or --knowledge PATH
-# if they asked
+# Set OPPA_DRIVER to claude when you are Claude Code, or codex when you are Codex.
+# Use the owner's explicit choice instead if they gave one.
+$B init --agent "$OPPA_DRIVER" --access full --web --imessage +15555550100,owner@example.com
+# Drop --web or --imessage if declined; add --vault OPPA only if chosen.
+# Add --no-browser, --model, --effort or --knowledge PATH if they asked.
 $B doctor
 $B chat --message "Say hello in five words."
 ```
 
-The reply proves the harness sign-in. If it fails, show the error. The fix is the
-owner signing in to that CLI, never an API key.
+The reply proves the selected harness can answer. Follow it with a second turn,
+asking what you just asked, to check session continuity. If either fails, inspect
+`oppa history` and the failed run before proceeding. A missing CLI needs an
+installation or PATH fix; an authentication failure needs subscription sign-in;
+a quota failure needs the reset time; an unavailable model needs one the account
+can use. Do not treat every failure as a login problem or switch providers.
+Leave `--model` unset unless requested, so the selected harness uses its own default.
+
+Continue only after both turns use the selected driver. Test the dashboard or
+phone after service start too: a terminal reply does not prove the service can
+find the CLI or its sign-in.
 
 Then prove each account they connected with a question whose answer only that
 account holds, such as `$B chat --message "What is the subject of my newest
@@ -361,6 +407,41 @@ time later when they ask.
 
 To turn it off, the owner runs `csrutil enable` the same way in step 2. The
 assistant goes back to words only.
+
+## Switching the driver after setup
+
+The first choice is a default, not a permanent binding. When the owner asks
+this coding agent to switch an existing OPPA from Claude to Codex or back:
+
+1. Read the existing private configuration and service status. Keep the instance,
+   memory, history, channels and access. Never run `init` again. If the private
+   configuration has uncommitted edits, preserve them and reconcile their owner
+   before changing the same file.
+2. Check the target CLI and its subscription sign-in using step 2. Prove a reply
+   on a disposable instance with that driver before changing the live choice.
+   Do not copy credentials or import the other harness's memories automatically.
+3. Save the previous configuration for rollback. Update the primary `[[agents]]`
+   entry from the target's bundled manifest in `resources/agents/`, with its
+   adapter path resolved to the existing runtime's `adapters/` directory.
+   Preserve any explicitly configured fallback agents and avoid duplicate ids.
+   Do not carry a provider-specific model or unsupported effort across: use the
+   target's default model and medium effort unless the owner chose others.
+4. Run `oppa doctor`, review that only the intended agent configuration changed,
+   and commit that configuration change in its private Git repository. Restart
+   the existing service with the owner present so every process uses the choice.
+   Do not reinstall the launcher or change macOS grants.
+5. Ask the owner for a message on their normal channel. Verify the reply and
+   the run's actual agent; if a fallback answered, the switch is not yet proved.
+   If the target cannot answer, restore and commit the previous configuration,
+   restart, and explain the failure before trying again.
+
+OPPA's memory and conversation history stay with the instance. Each harness
+has its own native sessions and connected accounts; a switch does not transfer
+those accounts. Check any connection the owner needs in the new driver.
+
+This workflow runs in the external coding agent. OPPA currently cannot switch
+its own driver through chat; its instructions prohibit changing its running
+configuration. Do not work around that restriction with a shell command.
 
 ## After setup
 
