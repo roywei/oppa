@@ -11,6 +11,15 @@ First public release.
   cannot run fails the task with its reason. Existing instances gain two columns on the tasks table in place; a build put back
   after an upgrade still runs, but cannot read the receipt of a task that chose a model or effort.
 
+- Watches: the assistant can watch something all day without a model turn for every look. A schedule with
+  `watch` (`every_minutes` 1 to 60, `until`, `cooldown_minutes` 5 to 1440, 30 by default) runs its command every
+  few minutes from `at` until `until` on its days. Serve runs it on a task of its own, so no turn waits for it,
+  one run at a time, and starts the schedule's turn only when the command prints a line `{"trigger": true}` or
+  fails; after a turn none starts for the cooldown. `runs/watch-<id>.json` keeps the latest run, which
+  `oppa schedules` shows as `last_run`. `oppa schedules add` takes `--every`, `--until` and `--cooldown`; at
+  `computer` access `schedules.create` takes `watch` and `command`. The policy hash changes (the manual and the
+  schedule tools), so sessions start afresh after an install. An earlier build cannot read a stored watch:
+  cancel watches before installing one.
 - The assistant has a soul and a face. Owners see two things: the Soul (`assistant/soul.md`: name, look,
   languages and personality, started from one of four presets in `resources/souls/`) and Memory. Every session
   reads three notes, soul first: the soul, the owner's own profile `people/<owner>/profile.md` (who they are and

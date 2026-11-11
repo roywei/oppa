@@ -3,10 +3,13 @@
 //! on repeating days, as a turn with the owner's authority, where the model
 //! does the work and writes whatever is said. Only an owner conversation turn
 //! may make or cancel one, and at `read` access only in its own conversation.
+//! At `computer` access, where a turn already has a shell, a schedule may run
+//! a command first, and a watch runs one every few minutes without a turn.
 
 use super::{denied, invalid, tool, unavailable, Broker, Fault, RunGrant, TaskAccess, ToolCall};
 use crate::{
-    schedule::{self, Schedule, ScheduleStore},
+    harness::Access,
+    schedule::{self, Schedule, ScheduleStore, Watch},
     store::Store,
 };
 use serde::{Deserialize, Serialize};
@@ -23,6 +26,10 @@ pub(super) struct ScheduleCreate {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     days: Vec<String>,
     prompt: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    command: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    watch: Option<Watch>,
     idempotency_key: String,
 }
 
@@ -60,6 +67,13 @@ fn bad_time() -> Fault {
     }
 }
 
+fn bad_watch() -> Fault {
+    Fault {
+        code: "invalid_watch",
+        message: "A watch needs a command (an argv, with absolute paths), watch.every_minutes from 1 to 60, at and watch.until as HH:MM in the host's time zone, watch.cooldown_minutes from 5 to 1440, a one-off's date not past, and a prompt that fits.",
+    }
+}
+
 pub(super) fn definitions(grant: &RunGrant, context: &Value) -> Vec<Value> {
     let list = tool("schedules.list", "List the owner's schedules in conversations this run may read, with each one's next slot and the last slot it fired.", json!({"context":context}), &["context"], true);
     match grant.task_access {
@@ -67,8 +81,15 @@ pub(super) fn definitions(grant: &RunGrant, context: &Value) -> Vec<Value> {
         TaskAccess::Read => return vec![list],
         TaskAccess::Manage => {}
     }
+    let mut properties = json!({"context":context,"conversation":{"type":"string","maxLength":4096},"at":{"type":"string","pattern":"^[0-2][0-9]:[0-5][0-9]$"},"date":{"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},"days":{"type":"array","items":{"type":"string","enum":["mon","tue","wed","thu","fri","sat","sun"]},"maxItems":7},"prompt":{"type":"string","minLength":1,"maxLength":8000,"description":"The instruction for that later turn in plain words, with everything it needs: for whom, and what to say or do."},"idempotency_key":{"type":"string","minLength":1,"maxLength":256}});
+    let mut description = "Schedule standing work for the owner, such as a reminder or a message due later: at a local time (HH:MM in the host's time zone) on one date (YYYY-MM-DD) or on repeating days (every day when none are given), the host fires `prompt` into the conversation as an owner turn, and you then do the work and write the message there. Name the conversation from history.conversations: where the owner asked, their own direct chat, or a group you are in. Reuse the idempotency_key to get the same schedule back.".to_string();
+    if grant.access == Access::Computer {
+        properties["command"] = json!({"type":"array","items":{"type":"string","maxLength":4096},"minItems":1,"maxItems":64,"description":"An argv run without a shell, as the owner, before the turn; its output goes into the turn. Use absolute paths."});
+        properties["watch"] = json!({"type":"object","additionalProperties":false,"properties":{"every_minutes":{"type":"integer","minimum":1,"maximum":60},"until":{"type":"string","pattern":"^[0-2][0-9]:[0-5][0-9]$","description":"When each day's watching ends; one not later than at ends the next day, and at itself watches all day."},"cooldown_minutes":{"type":"integer","minimum":5,"maximum":1440,"description":"Minutes after a turn before the watch can start another; 30 when omitted."}},"required":["every_minutes","until"]});
+        description.push_str(" To watch something often and cheaply, add watch and a command, such as a script you wrote: from at until watch.until on the schedule's days, the host runs the command every watch.every_minutes with no turn, and fires the turn, with the command's output, only when the command prints a line that is a JSON object with \"trigger\": true, or fails. After a turn it waits watch.cooldown_minutes before another. Have the command remember what it already reported, and say in the prompt what to do when it fires.");
+    }
     vec![
-        tool("schedules.create", "Schedule standing work for the owner, such as a reminder or a message due later: at a local time (HH:MM in the host's time zone) on one date (YYYY-MM-DD) or on repeating days (every day when none are given), the host fires `prompt` into the conversation as an owner turn, and you then do the work and write the message there. Name the conversation from history.conversations: where the owner asked, their own direct chat, or a group you are in. Reuse the idempotency_key to get the same schedule back.", json!({"context":context,"conversation":{"type":"string","maxLength":4096},"at":{"type":"string","pattern":"^[0-2][0-9]:[0-5][0-9]$"},"date":{"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},"days":{"type":"array","items":{"type":"string","enum":["mon","tue","wed","thu","fri","sat","sun"]},"maxItems":7},"prompt":{"type":"string","minLength":1,"maxLength":8000,"description":"The instruction for that later turn in plain words, with everything it needs: for whom, and what to say or do."},"idempotency_key":{"type":"string","minLength":1,"maxLength":256}}), &["context","conversation","at","prompt","idempotency_key"], false),
+        tool("schedules.create", &description, properties, &["context","conversation","at","prompt","idempotency_key"], false),
         list,
         tool("schedules.cancel", "Cancel a schedule by id so it never fires again; slots it already fired keep their records.", json!({"context":context,"id":{"type":"string","maxLength":64}}), &["context","id"], false),
     ]
@@ -116,20 +137,33 @@ impl Broker {
         if args.idempotency_key.trim().is_empty() || args.idempotency_key.len() > 256 {
             return Err(invalid());
         }
+        // A command runs as the owner with a shell's reach, which only a turn
+        // at computer access already has.
+        if (!args.command.is_empty() || args.watch.is_some())
+            && self.launch.grant.access != Access::Computer
+        {
+            return Err(denied());
+        }
         self.schedule_target(&args.conversation)?;
         let seed = format!("{}\n{}", self.launch.grant.input_seq, args.idempotency_key);
+        let refused = if args.watch.is_some() {
+            bad_watch
+        } else {
+            bad_time
+        };
         let schedule = Schedule {
             id: schedule::new_id(Some(&seed)).map_err(|_| unavailable())?,
             at: args.at.clone(),
             date: args.date.clone(),
-            days: schedule::parse_days(&args.days).map_err(|_| bad_time())?,
+            days: schedule::parse_days(&args.days).map_err(|_| refused())?,
             conversation: args.conversation.clone(),
             prompt: args.prompt.clone(),
-            command: vec![],
+            command: args.command.clone(),
             timeout_seconds: 300,
             window_minutes: 60,
             enabled: true,
             wake: false,
+            watch: args.watch.clone(),
         };
         let paths = self.paths().map_err(|_| unavailable())?;
         let store = ScheduleStore::open(&paths).map_err(|_| unavailable())?;
@@ -137,7 +171,7 @@ impl Broker {
         store
             .check(&schedule)
             .and_then(|()| schedule::ensure_future(&schedule))
-            .map_err(|_| bad_time())?;
+            .map_err(|_| refused())?;
         let origin = Some(self.launch.grant.input_seq);
         // Outward: at its time it acts with the owner's authority, sends included.
         self.journaled_effect("schedules.create", "outward", &args, || {

@@ -12,7 +12,7 @@ use crate::{
     tasks::TaskStore,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Local, TimeDelta, Utc};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -401,6 +401,43 @@ impl Runtime {
             "schedule {} is a wake, which fires as a look",
             schedule.id
         );
+        ensure!(
+            schedule.watch.is_none(),
+            "schedule {} is a watch, which fires when its command asks",
+            schedule.id
+        );
+        self.fire_slot(schedule, slot, None, deliver).await
+    }
+
+    /// Fire a watch's run that asked for a turn, or failed, as the turn a
+    /// schedule slot gets, with the body `Schedule::watch_run` returned. A
+    /// run less than the watch's cooldown after the slot of its last turn
+    /// fires nothing, so a watch that keeps asking starts one turn per
+    /// cooldown however long turns wait.
+    pub async fn fire_watch<D: Deliver>(
+        &self,
+        schedule: &Schedule,
+        slot: &DateTime<Local>,
+        body: String,
+        deliver: &mut D,
+    ) -> Result<Option<TurnResult>> {
+        ensure!(
+            schedule.watch.is_some(),
+            "schedule {} is not a watch",
+            schedule.id
+        );
+        self.fire_slot(schedule, slot, Some(body), deliver).await
+    }
+
+    /// A schedule slot's turn, with a watch run's `body` or, when there is
+    /// none, the body `Schedule::event_body` makes.
+    async fn fire_slot<D: Deliver>(
+        &self,
+        schedule: &Schedule,
+        slot: &DateTime<Local>,
+        body: Option<String>,
+        deliver: &mut D,
+    ) -> Result<Option<TurnResult>> {
         let identity = schedule.destination(&self.store)?;
         // A schedule kept from before the owner's account became a connection.
         ensure!(
@@ -417,19 +454,51 @@ impl Runtime {
             // Only the host's own record of this slot is reused.
             Some(event) if event.kind == "schedule" && event.author == author => event,
             Some(_) => bail!("another event already holds this schedule slot's id"),
-            None => self.store.append_inbound(&InboundEvent {
-                conversation: identity.id.clone(),
-                native_id,
-                author,
-                body: schedule
-                    .event_body(slot, &self.paths.runtime.join("runs"))
-                    .await?,
-                kind: "schedule".into(),
-                ..Default::default()
-            })?,
+            None => {
+                let body = match body {
+                    Some(_) if self.cooling(schedule, &identity.id, slot)? => return Ok(None),
+                    Some(body) => body,
+                    None => {
+                        schedule
+                            .event_body(slot, &self.paths.runtime.join("runs"))
+                            .await?
+                    }
+                };
+                self.store.append_inbound(&InboundEvent {
+                    conversation: identity.id.clone(),
+                    native_id,
+                    author,
+                    body,
+                    kind: "schedule".into(),
+                    ..Default::default()
+                })?
+            }
         };
         self.answer(&input, &standing, RunCapabilities::Conversation, deliver)
             .await
+    }
+
+    /// Whether the slot of this watch's last turn is less than its cooldown
+    /// before `slot`, or after it.
+    fn cooling(
+        &self,
+        schedule: &Schedule,
+        conversation: &str,
+        slot: &DateTime<Local>,
+    ) -> Result<bool> {
+        let Some(watch) = &schedule.watch else {
+            return Ok(false);
+        };
+        let prefix = format!("schedule:{}:", schedule.id);
+        let last = self
+            .store
+            .latest_inbound(conversation, &prefix)?
+            .and_then(|event| {
+                let native_id = event.native_id?;
+                DateTime::parse_from_rfc3339(native_id.strip_prefix(&prefix)?).ok()
+            });
+        let cooldown = TimeDelta::minutes(watch.cooldown_minutes.into());
+        Ok(last.is_some_and(|last| *slot < last + cooldown))
     }
 
     /// Fire one heartbeat slot into the heartbeat's conversation and run its

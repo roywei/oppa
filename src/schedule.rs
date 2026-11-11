@@ -15,14 +15,45 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::Digest;
-use std::{path::Path, process::Stdio, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+    time::Duration,
+};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 const MAX_STDOUT: usize = 64 * 1024;
 const MAX_STDERR: usize = 8 * 1024;
+/// How much of a watch run's output its record keeps.
+const RECORD_CHARS: usize = 1000;
 /// The failure a slot reports when its command started and left no result.
 const CUT_OFF: &str = "it started for this slot before and recorded no result, so it was not \
     run again; oppa may have stopped while it ran";
+/// A watch's quiet time after a turn when none is given.
+pub const DEFAULT_COOLDOWN: u32 = 30;
+
+/// A watch: the schedule's command runs every `every_minutes` from its `at`
+/// until `until` on its days, with no turn, and a run that asks for one or
+/// fails starts the schedule's turn, at most one per `cooldown_minutes`.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Watch {
+    pub every_minutes: u32,
+    /// Host local time, `HH:MM`: the first one after `at`, so a time not
+    /// later than `at` closes the window the next day.
+    pub until: String,
+    #[serde(default = "default_cooldown")]
+    pub cooldown_minutes: u32,
+}
+fn default_cooldown() -> u32 {
+    DEFAULT_COOLDOWN
+}
+
+impl Watch {
+    pub fn end(&self) -> Option<NaiveTime> {
+        NaiveTime::parse_from_str(&self.until, "%H:%M").ok()
+    }
+}
 
 /// One schedule: a local time, on one date or on repeating days.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -56,6 +87,9 @@ pub struct Schedule {
     /// reason, instead of an owner turn.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub wake: bool,
+    /// Set for a watch, whose command runs every few minutes without a turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watch: Option<Watch>,
 }
 fn default_timeout() -> u64 {
     300
@@ -123,6 +157,24 @@ impl Schedule {
                     && self.channel_destination().is_some()),
             "schedule {id}: a wake is a one-off in a channel conversation, without a command"
         );
+        if let Some(watch) = &self.watch {
+            ensure!(
+                !self.command.is_empty(),
+                "schedule {id}: a watch needs a command to run"
+            );
+            ensure!(
+                (1..=60).contains(&watch.every_minutes),
+                "schedule {id}: a watch's every_minutes must be 1..=60"
+            );
+            ensure!(
+                watch.end().is_some(),
+                "schedule {id}: a watch's until must be a local HH:MM time"
+            );
+            ensure!(
+                (5..=1440).contains(&watch.cooldown_minutes),
+                "schedule {id}: a watch's cooldown_minutes must be 5..=1440"
+            );
+        }
         ensure!(
             (1..=3600).contains(&self.timeout_seconds),
             "schedule {id}: timeout_seconds must be 1..=3600"
@@ -185,9 +237,70 @@ impl Schedule {
         })?)
     }
 
+    /// Run a watch's command for `slot`, with no turn, and return the event
+    /// body its turn gets when the run asks for one or fails; None when it
+    /// was quiet. A run may take its interval at most, so runs never overlap.
+    /// Its record, `runs/watch-<id>.json`, holds the latest run and is written
+    /// before the command starts, so a slot runs once, even across a restart.
+    pub async fn watch_run(
+        &self,
+        slot: &DateTime<impl TimeZone>,
+        runs: &Path,
+    ) -> Result<Option<String>> {
+        let every = self.watch.as_ref().context("not a watch")?.every_minutes;
+        let record = watch_record(runs, &self.id);
+        let slot_text = slot.to_rfc3339();
+        let last: Option<Value> = std::fs::read(&record)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+        if last.is_some_and(|last| last["slot"] == slot_text.as_str()) {
+            return Ok(None);
+        }
+        let started_at = Utc::now().to_rfc3339();
+        atomic_json(
+            &record,
+            &json!({"schedule":self.id,"slot":slot_text,"state":"started","started_at":started_at}),
+        )?;
+        let timeout = self.timeout_seconds.min(u64::from(every) * 60);
+        let report = run_command(&self.command, timeout).await;
+        let stdout = report.stdout.as_deref().unwrap_or_default();
+        let state = match (report.ok, asks_for_turn(stdout)) {
+            (false, _) => "failed",
+            (true, true) => "triggered",
+            (true, false) => "quiet",
+        };
+        // The head of the output and the tail of the errors, as a turn gets them.
+        let stderr = report.stderr.as_deref().unwrap_or_default();
+        let skipped = stderr.chars().count().saturating_sub(RECORD_CHARS);
+        atomic_json(
+            &record,
+            &json!({"schedule":self.id,"slot":slot_text,"state":state,"started_at":started_at,
+                "finished_at":Utc::now().to_rfc3339(),"exit_status":report.exit_status,
+                "failure":report.failure,"stdout":stdout.chars().take(RECORD_CHARS).collect::<String>(),
+                "stderr":stderr.chars().skip(skipped).collect::<String>()}),
+        )?;
+        if state == "quiet" {
+            return Ok(None);
+        }
+        Ok(Some(serde_json::to_string(&EventBody {
+            schedule: &self.id,
+            slot: slot_text,
+            prompt: &self.prompt,
+            command: Some(report),
+        })?))
+    }
+
     /// The slot owed at `now`: the latest configured time on an allowed day at
-    /// or before `now`, if `now` is at most `window_minutes` past it.
+    /// or before `now`, if `now` is at most `window_minutes` past it. A
+    /// watch's is its latest run time in the window `now` is in, owed until
+    /// the next.
     pub fn due_slot<Tz: TimeZone>(&self, now: &DateTime<Tz>) -> Option<DateTime<Tz>> {
+        if let Some(watch) = &self.watch {
+            let (start, _) = self.window(watch, now)?;
+            let every = i64::from(watch.every_minutes);
+            let runs = now.clone().signed_duration_since(&start).num_minutes() / every;
+            return Some(start + TimeDelta::minutes(runs * every));
+        }
         let latest = self.slots(now, -1).find(|slot| slot <= now)?;
         let late = now.clone().signed_duration_since(&latest);
         (late <= TimeDelta::minutes(self.window_minutes.into())).then_some(latest)
@@ -195,7 +308,56 @@ impl Schedule {
 
     /// The first slot after `now`.
     pub fn next_slot<Tz: TimeZone>(&self, now: &DateTime<Tz>) -> Option<DateTime<Tz>> {
+        if let Some(watch) = &self.watch {
+            let every = TimeDelta::minutes(watch.every_minutes.into());
+            let in_window = self.window(watch, now).and_then(|(_, end)| {
+                let next = self.due_slot(now)? + every;
+                (next < end).then_some(next)
+            });
+            return in_window.or_else(|| {
+                self.windows(watch, now, 1)
+                    .map(|(start, _)| start)
+                    .find(|start| start > now)
+            });
+        }
         self.slots(now, 1).find(|slot| slot > now)
+    }
+
+    /// The watch window `now` is in, as its start and end.
+    fn window<Tz: TimeZone>(
+        &self,
+        watch: &Watch,
+        now: &DateTime<Tz>,
+    ) -> Option<(DateTime<Tz>, DateTime<Tz>)> {
+        self.windows(watch, now, -1)
+            .find(|(start, end)| start <= now && now < end)
+    }
+
+    /// A watch's windows, in the direction of `step`: each from a slot that
+    /// `slots` gives until the next `until`, which ends a window that runs
+    /// past midnight on the next day. Clock changes move neither end, and
+    /// runs keep their interval in real time across them. A day whose `until`
+    /// does not exist (clocks spring forward) has no window, as one whose
+    /// `at` does not.
+    fn windows<'a, Tz: TimeZone>(
+        &'a self,
+        watch: &'a Watch,
+        now: &'a DateTime<Tz>,
+        step: i64,
+    ) -> impl Iterator<Item = (DateTime<Tz>, DateTime<Tz>)> + 'a {
+        self.slots(now, step).filter_map(move |start| {
+            let until = watch.end()?;
+            let date = if until > self.time()? {
+                start.date_naive()
+            } else {
+                start.date_naive().succ_opt()?
+            };
+            let end = now
+                .timezone()
+                .from_local_datetime(&date.and_time(until))
+                .earliest()?;
+            Some((start, end))
+        })
     }
 
     /// Slots on the fifteen local days from `now`'s date in the direction of
@@ -479,6 +641,14 @@ pub fn report(paths: &Paths, store: &Store, stored: &StoredSchedule) -> Result<V
     fields.insert("blocked".into(), json!(blocked));
     fields.insert("last_fired_slot".into(), json!(last));
     fields.insert("last_state".into(), json!(state));
+    // A watch's runs start no turn unless they ask: its record shows the latest.
+    if schedule.watch.is_some() {
+        let record = watch_record(&paths.runtime.join("runs"), &schedule.id);
+        let last_run = std::fs::read(record)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+        fields.insert("last_run".into(), json!(last_run));
+    }
     Ok(value)
 }
 
@@ -555,6 +725,19 @@ struct CommandReport {
     stdout_truncated: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stdout: Option<String>,
+}
+
+/// Where a watch keeps the record of its latest run.
+fn watch_record(runs: &Path, id: &str) -> PathBuf {
+    runs.join(format!("watch-{id}.json"))
+}
+
+/// Whether a watch run's output asks for a turn: a line that is a JSON
+/// object whose `trigger` is true, such as `{"trigger": true, "why": "..."}`.
+fn asks_for_turn(stdout: &str) -> bool {
+    stdout
+        .lines()
+        .any(|line| serde_json::from_str::<Value>(line).is_ok_and(|value| value["trigger"] == true))
 }
 
 /// Run a schedule's command without a shell and report what its turn needs:

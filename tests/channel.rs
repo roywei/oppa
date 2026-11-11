@@ -588,6 +588,7 @@ async fn a_due_schedule_is_answered_in_its_configured_conversation_only() {
         window_minutes: 60,
         enabled: true,
         wake: false,
+        watch: None,
     };
     let schedules = ScheduleStore::open(&fixture.paths).unwrap();
     for (id, chat) in [("briefing", "family"), ("unseen", "new-chat")] {
@@ -625,6 +626,117 @@ async fn a_due_schedule_is_answered_in_its_configured_conversation_only() {
     assert!(store.conversation("fake/acct/new-chat").is_err());
     stop.send(()).unwrap();
     server.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn serve_runs_watches_beside_turns_and_starts_a_turn_only_when_one_asks() {
+    // Incident 2026-11-05 (tests/runtime.rs has the run and cooldown rules):
+    // serve runs each watch's command on its own, so a slow one never holds
+    // up the owner's messages in its chat, a quiet one calls no model, and
+    // stopping serve stops a command still running.
+    let fixture = Fixture::new(&["+15550001"]);
+    let slow_pid = fixture.root.path().join("slow.pid");
+    // All day, so the test passes at any hour.
+    let watch = |id: &str, every_minutes: u32, script: &str| Schedule {
+        id: id.into(),
+        at: "00:00".into(),
+        date: None,
+        days: vec![],
+        conversation: "fake/acct/dm-1".into(),
+        prompt: format!("The {id} watch asked: tell the owner."),
+        command: vec![
+            "/bin/sh".into(),
+            "-c".into(),
+            script.into(),
+            "sh".into(),
+            slow_pid.to_string_lossy().into(),
+        ],
+        timeout_seconds: 300,
+        window_minutes: 60,
+        enabled: true,
+        wake: false,
+        watch: Some(oppa::schedule::Watch {
+            every_minutes,
+            until: "00:00".into(),
+            cooldown_minutes: 30,
+        }),
+    };
+    let schedules = ScheduleStore::open(&fixture.paths).unwrap();
+    for watch in [
+        watch("slow", 60, r#"sleep 200 & echo $! > "$1"; wait"#),
+        watch("quiet", 1, r#"echo '{"trigger": false}'"#),
+        watch(
+            "move",
+            1,
+            r#"echo 'SPY -2.1% intraday'; echo '{"trigger": true}'"#,
+        ),
+    ] {
+        schedules.add(&watch, "owner", None).unwrap();
+    }
+    let store = fixture.store();
+    store
+        .create_conversation("fake/acct/dm-1", "fake", "acct", "dm-1", "earlier")
+        .unwrap();
+    store
+        .set_conversation_shape("fake/acct/dm-1", "dm", None)
+        .unwrap();
+    let (server, stop) = fixture.start();
+    let deadline = Instant::now() + EVENTUALLY;
+    while !slow_pid.exists() {
+        assert!(Instant::now() < deadline, "the slow watch never started");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let sent = fixture.wait_sent(1).await;
+    assert!(
+        sent[0]["body"]
+            .as_str()
+            .unwrap()
+            .contains("The move watch asked"),
+        "{}",
+        sent[0]
+    );
+    fixture.deliver("m1", message("dm-1", "m1", "+15550001", "Still there?"));
+    let sent = fixture.wait_sent(2).await;
+    assert_eq!(sent[1]["body"], "Reply to: Still there?");
+    let record = |id: &str| -> Value {
+        let path = fixture.paths.runtime.join(format!("runs/watch-{id}.json"));
+        serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+    };
+    assert_eq!(record("slow")["state"], "started", "it is still running");
+    assert_eq!(record("quiet")["state"], "quiet");
+    fixture.wait_settled().await;
+    settle().await;
+    assert_eq!(
+        fixture.harness_calls().len(),
+        2,
+        "the quiet watch called none"
+    );
+    let events = store.transcript("fake/acct/dm-1", 0, 10).unwrap();
+    assert_eq!(
+        (events[0].kind.as_str(), events[0].author.as_str()),
+        ("schedule", "synthetic-owner")
+    );
+    assert!(events[0]
+        .native_id
+        .as_deref()
+        .unwrap()
+        .starts_with("schedule:move:"));
+    stop.send(()).unwrap();
+    tokio::time::timeout(EVENTUALLY, server)
+        .await
+        .expect("serve stops without waiting for the slow command")
+        .unwrap()
+        .unwrap();
+    let pid: i32 = fs::read_to_string(&slow_pid)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while unsafe { libc::kill(pid, 0) } == 0 {
+        assert!(Instant::now() < deadline, "the slow command still runs");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1432,6 +1544,7 @@ async fn a_schedule_kept_from_before_never_fires_on_the_owners_own_account() {
             window_minutes: 60,
             enabled: true,
             wake: false,
+            watch: None,
         };
         schedules.add(&schedule, "owner", None).unwrap();
     }
@@ -3312,6 +3425,7 @@ async fn a_wake_the_assistant_set_fires_once_as_a_read_only_look() {
             window_minutes: 30,
             enabled: true,
             wake: true,
+            watch: None,
         };
         ScheduleStore::open(&fixture.paths)
             .unwrap()

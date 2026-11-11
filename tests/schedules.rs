@@ -10,7 +10,7 @@ use oppa::{
     harness::{Access, AgentManifest},
     heartbeat::Heartbeat,
     runtime::{ConsoleDelivery, Runtime},
-    schedule::{Schedule, ScheduleStore},
+    schedule::{Schedule, ScheduleStore, Watch},
     store::{DeliveryState, InboundEvent, Store},
     vault::Vault,
 };
@@ -91,7 +91,109 @@ fn schedule(at: &str, days: &[Weekday], window_minutes: u32) -> Schedule {
         window_minutes,
         enabled: true,
         wake: false,
+        watch: None,
     }
+}
+
+/// A watch that runs `/bin/echo` every `every` minutes from `at` until `until`.
+fn watch(at: &str, until: &str, every: u32, days: &[Weekday]) -> Schedule {
+    Schedule {
+        command: vec!["/bin/echo".into()],
+        watch: Some(Watch {
+            every_minutes: every,
+            until: until.into(),
+            cooldown_minutes: 30,
+        }),
+        ..schedule(at, days, 60)
+    }
+}
+
+#[test]
+fn a_watch_runs_on_its_interval_in_its_window_and_keeps_real_time_across_clock_changes() {
+    // Incident 2026-11-05: a resting stop sold at the panic low before any
+    // turn could judge it. A watch runs every few minutes in its window, each
+    // run owed until the next, and never between windows.
+    use Weekday::{Fri, Mon, Thu, Tue, Wed};
+    let due = |watch: &Schedule, now| watch.due_slot(&now).map(|slot| slot.to_rfc3339());
+    let next = |watch: &Schedule, now| watch.next_slot(&now).map(|slot| slot.to_rfc3339());
+    // Every 2 minutes in market hours; 2026-09-28 is a Monday.
+    let market = watch("06:30", "13:00", 2, &[Mon, Tue, Wed, Thu, Fri]);
+    let monday = |time: &str| Some(format!("2026-09-28T{time}:00-07:00"));
+    assert_eq!(due(&market, at(9, 28, 6, 29)), None, "before at");
+    assert_eq!(due(&market, at(9, 28, 6, 30)), monday("06:30"));
+    assert_eq!(
+        due(&market, at(9, 28, 6, 31)),
+        monday("06:30"),
+        "owed until the next"
+    );
+    assert_eq!(due(&market, at(9, 28, 12, 59)), monday("12:58"));
+    assert_eq!(
+        due(&market, at(9, 28, 13, 0)),
+        None,
+        "until ends the window"
+    );
+    assert_eq!(next(&market, at(9, 28, 6, 31)), monday("06:32"));
+    assert_eq!(
+        next(&market, at(9, 28, 12, 58)),
+        Some("2026-09-29T06:30:00-07:00".into())
+    );
+    assert_eq!(
+        next(&market, at(10, 2, 12, 59)),
+        Some("2026-10-05T06:30:00-07:00".into()),
+        "Friday's last run, then Monday's first"
+    );
+    assert_eq!(due(&market, at(10, 3, 9, 0)), None, "not on Saturday");
+    // A window that ends no later than it starts runs past midnight, and
+    // belongs to the day it starts: Friday night into Saturday morning.
+    let overnight = watch("13:00", "06:30", 15, &[Fri]);
+    assert_eq!(
+        due(&overnight, at(10, 3, 5, 50)),
+        Some("2026-10-03T05:45:00-07:00".into())
+    );
+    assert_eq!(due(&overnight, at(10, 3, 6, 30)), None);
+    assert_eq!(due(&overnight, at(10, 2, 0, 30)), None, "Thursday's night");
+    // The same time twice watches all day.
+    let all_day = watch("00:00", "00:00", 60, &[]);
+    assert_eq!(
+        due(&all_day, at(9, 29, 23, 59)),
+        Some("2026-09-29T23:00:00-07:00".into())
+    );
+    // Clocks spring forward at 02:00 on 2026-03-08: runs keep 15 minutes of
+    // real time, so 01:45 is followed by 03:00.
+    let night = watch("22:00", "06:00", 15, &[]);
+    assert_eq!(
+        next(&night, at(3, 8, 1, 50)),
+        Some("2026-03-08T03:00:00-07:00".into())
+    );
+    assert_eq!(
+        due(&night, at(3, 8, 3, 5)),
+        Some("2026-03-08T03:00:00-07:00".into())
+    );
+    // 01:00 to 01:59 happens twice on 2026-11-01: each pass has its own run.
+    let local = naive(11, 1, 1, 50);
+    let (first, second) = (
+        Synthetic.from_local_datetime(&local).earliest().unwrap(),
+        Synthetic.from_local_datetime(&local).latest().unwrap(),
+    );
+    assert_eq!(due(&night, first), Some("2026-11-01T01:45:00-07:00".into()));
+    assert_eq!(
+        due(&night, second),
+        Some("2026-11-01T01:45:00-08:00".into())
+    );
+    // A one-off watch has one window.
+    let once = Schedule {
+        date: Some("2026-11-19".into()),
+        ..watch("09:00", "10:00", 5, &[])
+    };
+    assert_eq!(
+        next(&once, at(9, 28, 7, 0)),
+        Some("2026-11-19T09:00:00-08:00".into())
+    );
+    assert_eq!(
+        due(&once, at(11, 19, 9, 7)),
+        Some("2026-11-19T09:05:00-08:00".into())
+    );
+    assert_eq!(next(&once, at(11, 19, 9, 57)), None, "never again");
 }
 
 #[test]
@@ -185,7 +287,22 @@ fn schedules_must_address_the_console_or_a_configured_channel_account() {
     for conversation in ["console", "imsg/assistant/any;-;chat/with/slashes"] {
         to(conversation).validate(&channels).unwrap();
     }
+    watch("13:00", "06:30", 15, &[])
+        .validate(&channels)
+        .unwrap();
+    let mut restless = watch("06:30", "13:00", 2, &[]);
+    restless.watch.as_mut().unwrap().cooldown_minutes = 4;
     for invalid in [
+        // A watch runs a command every 1 to 60 minutes until a local time,
+        // and waits 5 to 1440 minutes after a turn.
+        Schedule {
+            command: vec![],
+            ..watch("06:30", "13:00", 2, &[])
+        },
+        watch("06:30", "13:00", 0, &[]),
+        watch("06:30", "13:00", 61, &[]),
+        watch("06:30", "1pm", 2, &[]),
+        restless,
         to("other/assistant/chat"),
         to("imsg/owner/chat"),
         to("imsg/assistant/ "),
@@ -892,6 +1009,70 @@ fn a_schedule_stays_here_at_read_access_and_never_targets_the_console() {
         fault(create(&worker, "fake/acct/dm-1", "g", &date, &at)),
         "access_denied"
     );
+}
+
+#[test]
+fn a_turn_at_full_access_sets_a_watch_and_one_below_it_cannot() {
+    // Owner's request of 2026-11-11 after a resting stop sold at the panic low
+    // on 2026-11-05: watch the market all day without a model turn per look.
+    // S-3: a watch runs a command as the owner, which only a turn that already
+    // has a shell (computer access) may set.
+    let spy = |broker: &Broker, key: &str, every: u32| {
+        broker.call(
+            "schedules.create",
+            json!({"context":"synthetic-context","conversation":"fake/acct/dm-1","at":"06:30",
+                "days":["mon","tue","wed","thu","fri"],"prompt":"SPY moved 2% today: decide what to do.",
+                "command":["/usr/bin/python3","/opt/watch/spy_move.py"],
+                "watch":{"every_minutes":every,"until":"13:00"},"idempotency_key":key}),
+        )
+    };
+    let offered = |broker: &Broker| {
+        let create = broker
+            .definitions()
+            .into_iter()
+            .find(|tool| tool["name"] == "schedules.create")
+            .unwrap();
+        let properties = &create["inputSchema"]["properties"];
+        (
+            properties.get("watch").is_some(),
+            properties.get("command").is_some(),
+        )
+    };
+    let (_dir, paths, broker, _) = tool_fixture(Access::Computer, true);
+    assert_eq!(offered(&broker), (true, true));
+    assert_eq!(fault(spy(&broker, "bad", 0)), "invalid_watch");
+    let made = spy(&broker, "spy", 2);
+    assert!(!made.is_error, "{}", made.value);
+    let receipt = &made.value["receipt"];
+    assert_eq!(
+        (&receipt["watch"], &receipt["command"], &receipt["last_run"]),
+        (
+            &json!({"every_minutes":2,"until":"13:00","cooldown_minutes":30}),
+            &json!(["/usr/bin/python3", "/opt/watch/spy_move.py"]),
+            &Value::Null
+        )
+    );
+    assert!(receipt["next_slot"].is_string(), "{receipt}");
+    let cancelled = broker.call(
+        "schedules.cancel",
+        json!({"context":"synthetic-context","id":receipt["id"]}),
+    );
+    assert!(cancelled.value["receipt"]["cancelled_at"].is_string());
+    assert!(ScheduleStore::open(&paths)
+        .unwrap()
+        .list(false)
+        .unwrap()
+        .is_empty());
+    for access in [Access::Connectors, Access::Read] {
+        let (_dir, paths, broker, _) = tool_fixture(access, true);
+        assert_eq!(offered(&broker), (false, false), "{access:?}");
+        assert_eq!(fault(spy(&broker, "spy", 2)), "access_denied");
+        assert!(ScheduleStore::open(&paths)
+            .unwrap()
+            .list(true)
+            .unwrap()
+            .is_empty());
+    }
 }
 
 #[test]

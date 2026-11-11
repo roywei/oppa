@@ -231,6 +231,16 @@ enum ScheduleCommand {
         /// Letters, digits, '-' or '_'; generated when omitted.
         #[arg(long)]
         id: Option<String>,
+        /// Make it a watch: run the command every this many minutes (1 to 60)
+        /// from --at until --until, and start the turn only when it asks.
+        #[arg(long, requires = "until")]
+        every: Option<u32>,
+        /// A watch's end, local HH:MM; one not later than --at ends the next day.
+        #[arg(long, requires = "every")]
+        until: Option<String>,
+        /// A watch's minutes without a turn after one (5 to 1440; 30 when omitted).
+        #[arg(long, requires = "every")]
+        cooldown: Option<u32>,
         /// After `--`, an argv run without a shell before the turn.
         #[arg(last = true)]
         command: Vec<String>,
@@ -604,6 +614,9 @@ async fn main() -> Result<()> {
                     days,
                     prompt,
                     id,
+                    every,
+                    until,
+                    cooldown,
                     command,
                 }),
             ..
@@ -623,6 +636,13 @@ async fn main() -> Result<()> {
                 window_minutes: 60,
                 enabled: true,
                 wake: false,
+                watch: every
+                    .zip(until)
+                    .map(|(every_minutes, until)| schedule::Watch {
+                        every_minutes,
+                        until,
+                        cooldown_minutes: cooldown.unwrap_or(schedule::DEFAULT_COOLDOWN),
+                    }),
             };
             schedule::ensure_future(&schedule)?;
             let (stored, new) = ScheduleStore::open(&paths)?.add(&schedule, "owner", None)?;
@@ -708,9 +728,24 @@ async fn main() -> Result<()> {
                 .with_second(0)
                 .and_then(|now| now.with_nanosecond(0))
                 .context("the local clock has no current minute")?;
-            let turn = runtime
-                .fire_schedule(schedule, &slot, &mut ConsoleDelivery(deliver_console))
-                .await?;
+            let mut console = ConsoleDelivery(deliver_console);
+            // A watch runs its command first and starts the turn only when it asks.
+            if schedule.watch.is_some() {
+                let runs = runtime.paths.runtime.join("runs");
+                let Some(body) = schedule.watch_run(&slot, &runs).await? else {
+                    eprintln!("watch {id} asked for no turn; oppa schedules shows its last run");
+                    return Ok(());
+                };
+                if runtime
+                    .fire_watch(schedule, &slot, body, &mut console)
+                    .await?
+                    .is_none()
+                {
+                    eprintln!("watch {id} asked for a turn within its cooldown; nothing ran");
+                }
+                return Ok(());
+            }
+            let turn = runtime.fire_schedule(schedule, &slot, &mut console).await?;
             if turn.is_none() {
                 eprintln!(
                     "schedule {id} already fired for {}; nothing ran",

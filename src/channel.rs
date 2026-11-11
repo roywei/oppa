@@ -631,6 +631,12 @@ enum Job {
         schedule: Schedule,
         slot: chrono::DateTime<chrono::Local>,
     },
+    /// A watch's run that asked for a turn or failed, with its event body.
+    Watch {
+        schedule: Schedule,
+        slot: chrono::DateTime<chrono::Local>,
+        body: String,
+    },
     /// A message another conversation's turn queued for this one.
     Deliver { outbox_id: i64 },
     /// Tell the owner, in this direct chat, about messages in `source` from
@@ -812,6 +818,11 @@ impl Server {
         let mut channels = tokio::time::interval(Duration::from_secs(1));
         channels.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut dispatched = HashMap::new();
+        // Each watch's latest run, by schedule id, and the slot it ran.
+        let mut watching: HashMap<
+            String,
+            (chrono::DateTime<chrono::Local>, tokio::task::JoinHandle<()>),
+        > = HashMap::new();
         let mut report = Report::default();
         // Held messages of a channel that just started, read before the inbox.
         let mut replay: std::collections::VecDeque<(String, AdapterEvent)> = Default::default();
@@ -943,6 +954,32 @@ impl Server {
                         if client.manifest.account_holder == AccountHolder::Owner {
                             continue;
                         }
+                        // A watch's command runs on a task of its own, so no turn
+                        // waits for it; only a run that asks for a turn, or
+                        // fails, goes to the worker. One run at a time, each
+                        // slot once.
+                        if schedule.watch.is_some() {
+                            if watching.get(&schedule.id).is_some_and(|(ran, run)| *ran == slot || !run.is_finished()) {
+                                continue;
+                            }
+                            let worker = workers.entry(schedule.conversation.clone()).or_insert_with(|| {
+                                spawn_worker(&self.paths, self.broker_executable.clone(), client.clone(), &schedule.conversation, native_id)
+                            });
+                            let (jobs, config, runs) = (worker.jobs.clone(), live.clone(), self.paths.runtime.join("runs"));
+                            let id = schedule.id.clone();
+                            let run = tokio::spawn(async move {
+                                match schedule.watch_run(&slot, &runs).await {
+                                    // A stopped worker stops serve on the next job serve sends it.
+                                    Ok(Some(body)) => {
+                                        let _ = jobs.send((config, Job::Watch { schedule, slot, body }));
+                                    }
+                                    Ok(None) => {}
+                                    Err(error) => eprintln!("serve: {}: watch {}: {error}", schedule.conversation, schedule.id),
+                                }
+                            });
+                            watching.insert(id, (slot, run));
+                            continue;
+                        }
                         // A wake looks only while a heartbeat runs, in its waking hours.
                         let heartbeat = match &running {
                             _ if !schedule.wake => None,
@@ -1053,6 +1090,12 @@ impl Server {
                 }
             }
         };
+        // A watch run holds its conversation's worker open: stop it first,
+        // and its command's process group with it.
+        for (_, (_, run)) in watching.drain() {
+            run.abort();
+            let _ = run.await;
+        }
         for (_, worker) in workers.drain() {
             drop(worker.jobs);
             let _ = worker.thread.join();
@@ -1211,6 +1254,17 @@ fn spawn_worker(
                         {
                             report
                                 .error(&conversation, format!("schedule {}: {error}", schedule.id));
+                        }
+                    }
+                    Ok(Job::Watch {
+                        schedule,
+                        slot,
+                        body,
+                    }) => {
+                        if let Err(error) =
+                            host.fire_watch(&schedule, &slot, body, &mut delivery).await
+                        {
+                            report.error(&conversation, format!("watch {}: {error}", schedule.id));
                         }
                     }
                     Ok(Job::Wake {

@@ -141,6 +141,7 @@ impl Broker {
                     window_minutes: 30,
                     enabled: true,
                     wake: true,
+                    watch: None,
                 };
                 let slot = wake
                     .one_off_date()

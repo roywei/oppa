@@ -1267,6 +1267,7 @@ fn console_schedule(id: &str, command: &[&str], timeout_seconds: u64) -> Schedul
         window_minutes: 60,
         enabled: true,
         wake: false,
+        watch: None,
     }
 }
 
@@ -1509,6 +1510,132 @@ async fn a_failed_schedule_command_reaches_its_turn_as_a_failure() {
         (exited["stdout"].as_str(), exited["stderr"].as_str()),
         (Some("partial\n"), Some("synthetic source unavailable\n"))
     );
+}
+
+#[tokio::test]
+async fn a_watch_starts_a_turn_only_when_its_command_asks_or_fails_and_waits_out_its_cooldown() {
+    // Incident 2026-11-05: a resting stop sold QQQ at the panic low before any
+    // turn could judge it, since every schedule slot is a model turn and so
+    // ran only a few times a day. A watch's command runs with no turn; a run
+    // that asks for one or fails starts it, at most one per cooldown.
+    let (dir, runtime) = fixture(|root| vec![agent(root, "first", -1, 0.0)]);
+    let (mode, runs) = (dir.path().join("mode"), dir.path().join("command-runs"));
+    let script = r#"echo run >> "$2"
+case "$(cat "$1")" in
+quiet) echo '{"trigger": false, "spy": "+0.4%"}' ;;
+ask) echo 'SPY 701.18 to 686.90'; echo '{"trigger": true, "why": "SPY -2.0% intraday"}' ;;
+*) echo 'synthetic quote source unavailable' >&2; exit 2 ;;
+esac"#;
+    let added = oppa(
+        &runtime,
+        &[
+            "schedules",
+            "add",
+            "--id",
+            "spy",
+            "--conversation",
+            "console",
+            "--at",
+            "06:30",
+            "--days",
+            "mon,tue,wed,thu,fri",
+            "--every",
+            "2",
+            "--until",
+            "13:00",
+            "--prompt",
+            "SPY moved: decide what to do.",
+            "--",
+            "/bin/sh",
+            "-c",
+            script,
+            "sh",
+            mode.to_str().unwrap(),
+            runs.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(
+        added["watch"],
+        serde_json::json!({"every_minutes":2,"until":"13:00","cooldown_minutes":30})
+    );
+    let watch = ScheduleStore::open(&runtime.paths)
+        .unwrap()
+        .get("spy")
+        .unwrap()
+        .schedule;
+    let records = runtime.paths.runtime.join("runs");
+    let opening = chrono::Local
+        .with_ymd_and_hms(2026, 9, 28, 6, 30, 0)
+        .unwrap();
+    let at = |minutes| opening + chrono::Duration::minutes(minutes);
+    let run = async |says: &str, slot: chrono::DateTime<chrono::Local>| {
+        fs::write(&mode, says).unwrap();
+        let body = watch.watch_run(&slot, &records).await.unwrap()?;
+        let turn = runtime
+            .fire_watch(&watch, &slot, body, &mut ConsoleDelivery(|_: &str| Ok(())))
+            .await
+            .unwrap();
+        Some(turn.is_some())
+    };
+    let turns = || {
+        fs::read_to_string(dir.path().join("first.json")).map_or(0, |text| {
+            serde_json::from_str::<Vec<Value>>(&text).unwrap().len()
+        })
+    };
+    assert_eq!(run("quiet", at(0)).await, None, "a quiet run");
+    assert_eq!(run("ask", at(0)).await, None, "a slot runs once");
+    assert_eq!(turns(), 0, "no model was called");
+    assert_eq!(run("ask", at(2)).await, Some(true));
+    assert_eq!(run("ask", at(4)).await, Some(false), "within the cooldown");
+    assert_eq!(run("fail", at(32)).await, Some(true), "a failure, after it");
+    assert_eq!(fs::read_to_string(&runs).unwrap().lines().count(), 4);
+    let requests = captured(dir.path(), "first");
+    assert_eq!(requests.len(), 2);
+    let asked = schedule_body(&requests[0]);
+    assert_eq!(
+        (&asked["prompt"], &asked["slot"]),
+        (
+            &Value::from("SPY moved: decide what to do."),
+            &Value::from(at(2).to_rfc3339())
+        )
+    );
+    assert!(asked["command"]["stdout"]
+        .as_str()
+        .unwrap()
+        .contains(r#""why": "SPY -2.0% intraday""#));
+    let failed = &schedule_body(&requests[1])["command"];
+    assert_eq!(
+        (&failed["ok"], &failed["failure"], &failed["stderr"]),
+        (
+            &Value::from(false),
+            &Value::from("exited with status 2"),
+            &Value::from("synthetic quote source unavailable\n")
+        )
+    );
+    // The listing keeps the latest run beside the last slot that fired.
+    let listed = &oppa(&runtime, &["schedules"])[0];
+    assert_eq!(
+        (&listed["last_fired_slot"], &listed["last_state"]),
+        (&Value::from(at(32).to_rfc3339()), &Value::from("completed"))
+    );
+    let last_run = &listed["last_run"];
+    assert_eq!(
+        (
+            &last_run["slot"],
+            &last_run["state"],
+            &last_run["exit_status"]
+        ),
+        (
+            &Value::from(at(32).to_rfc3339()),
+            &Value::from("failed"),
+            &Value::from(2)
+        )
+    );
+    // A watch fires only through its runs.
+    assert!(runtime
+        .fire_schedule(&watch, &at(34), &mut ConsoleDelivery(|_: &str| Ok(())))
+        .await
+        .is_err());
 }
 
 #[tokio::test]

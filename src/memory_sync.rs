@@ -234,6 +234,7 @@ impl MemorySync {
             window_minutes: 60,
             enabled: true,
             wake: false,
+            watch: None,
         }
     }
 
@@ -277,6 +278,7 @@ impl MemorySync {
             window_minutes: 60,
             enabled: true,
             wake: false,
+            watch: None,
         };
         let catching_up = Schedule {
             window_minutes: REVIEW_HOURS * 60,

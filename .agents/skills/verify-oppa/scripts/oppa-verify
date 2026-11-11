@@ -1246,6 +1246,47 @@ def drive_schedules(inst: Instance):
     assert console["last_event_at"] == answered["created_at"], "oppa conversations does not show the newest event"
 
 
+def drive_watches(inst: Instance):
+    """A console watch all day, every minute: a quiet run starts no turn; a run that prints a trigger line fires
+    one real turn holding the command's output; one more ask within the cooldown fires none. Each run needs a
+    minute of its own, since a slot runs once: about three minutes, one model request."""
+    word, tag = "marigold-" + os.urandom(3).hex(), os.urandom(3).hex()
+    watch, says = f"verify-watch-{tag}", inst.root / f"watch-says-{tag}"
+    says.write_text('{"trigger": false, "spy": "+0.4%"}\n')
+    inst.run("watches", "00-add", "schedules", "add", "--id", watch, "--conversation", "console",
+             "--at", "00:00", "--until", "00:00", "--every", "1", "--prompt",
+             f"Watch check: in one short sentence, say what the watch saw and include the word {word}.",
+             "--", "/bin/cat", str(says))
+
+    def next_minute():
+        time.sleep(61 - datetime.now().second)
+
+    before = len(inst.json("watches", "01-history", "history", "--conversation", "console"))
+    quiet = inst.run("watches", "02-run-quiet", "schedules", "run", watch)
+    assert "asked for no turn" in quiet.stderr and not quiet.stdout.strip(), "a quiet run answered or failed"
+    events = inst.json("watches", "03-history", "history", "--conversation", "console")
+    assert len(events) == before, "a quiet run logged an event"
+    next_minute()
+    says.write_text('synthetic quote: SPY -2.1% intraday\n{"trigger": true}\n')
+    reply = inst.run("watches", "04-run-ask", "schedules", "run", watch).stdout
+    assert word in reply.lower(), f"the reply lacks the requested word: {reply.strip()[:200]}"
+    events = inst.json("watches", "05-history", "history", "--conversation", "console")
+    fired, answered = events[-2], events[-1]
+    assert (fired["kind"], fired["direction"], fired["author"]) == ("schedule", "in", "owner"), \
+        f"the input before the reply is not the owner's schedule event: {fired['kind']}, {fired['author']}"
+    assert (answered["direction"], answered.get("delivery")) == ("out", "sent"), "the reply after it was not delivered"
+    body = json.loads(fired["body"])
+    assert "SPY -2.1% intraday" in body["command"]["stdout"], "the command output is not in the event"
+    next_minute()
+    held = inst.run("watches", "06-run-held", "schedules", "run", watch)
+    assert "within its cooldown" in held.stderr and not held.stdout.strip(), "a second ask fired a turn"
+    entry = next(s for s in inst.json("watches", "07-list", "schedules") if s["id"] == watch)
+    assert (entry["last_fired_slot"], entry["last_state"]) == (body["slot"], "completed"), \
+        f"the listing shows {entry['last_fired_slot']} {entry['last_state']}, not the slot that fired"
+    assert entry["last_run"]["state"] == "triggered", f"the last run is {entry['last_run']}"
+    inst.run("watches", "08-cancel", "schedules", "cancel", watch)
+
+
 # A synthetic channel: messages dropped in <root>/inbox arrive as events, and every send is
 # appended to <root>/sent.jsonl with a native id that stays unique across restarts.
 SYNTHETIC_CHANNEL = r"""
@@ -3297,6 +3338,7 @@ DRIVES = {
     "mac-connector": drive_mac_connector,
     "background-tasks": drive_background_tasks,
     "schedules": drive_schedules,
+    "watches": drive_watches,
     "messages": drive_messages,
     "people-registry": drive_people_registry,
     "family-turns": drive_family_turns,
