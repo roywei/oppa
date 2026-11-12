@@ -146,6 +146,13 @@ def first_line(text, limit=60):
     return line if len(line) <= limit else line[:limit - 1].rstrip() + "…"
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """The voice provider's key goes to the address the owner named, never on to another one."""
+
+    def redirect_request(self, *args):
+        return None
+
+
 class Refused(Exception):
     """A page request this adapter will not carry out, with its HTTP status and
     a plain message for the owner."""
@@ -442,7 +449,7 @@ class App:
         if not self.options.voice_key:
             raise Refused(404, "Voice is not set up for this web channel.")
         if self.voice_key is None:
-            code, out, _ = run_bounded(shlex.split(self.options.voice_key), VOICE_SECONDS)
+            code, out, _ = run_bounded(self.options.voice_key, VOICE_SECONDS)
             key = out.decode("utf-8", "replace").strip()
             if code != 0 or not key or "\n" in key:
                 raise Refused(502, "The voice key command did not print a key.")
@@ -452,7 +459,7 @@ class App:
             json.dumps({"expires_after": {"anchor": "created_at", "seconds": VOICE_KEY_SECONDS}}).encode(),
             {"Authorization": "Bearer " + self.voice_key, "Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(request, timeout=VOICE_SECONDS) as response:
+            with urllib.request.build_opener(NoRedirect).open(request, timeout=VOICE_SECONDS) as response:
                 secret = json.loads(response.read(MAX_REQUEST)).get("value")
         except urllib.error.HTTPError as error:
             if error.code in (401, 403):
@@ -1060,9 +1067,19 @@ def main():
         parser.error("--channel must be the [[channels]] id")
     if any(not re.fullmatch(r"[A-Za-z0-9.-]{1,253}(?::[0-9]{1,5})?", name) for name in options.host):
         parser.error("--host takes a host name, with a port when it is not 443")
-    if urllib.parse.urlsplit(options.voice_url).scheme not in ("http", "https"):
-        parser.error("--voice-url takes an http or https address")
+    voice = urllib.parse.urlsplit(options.voice_url)
+    if (voice.scheme not in ("http", "https") or voice.query or voice.fragment
+            or not re.fullmatch(r"[A-Za-z0-9.-]{1,253}(?::[0-9]{1,5})?", voice.netloc)
+            or not re.fullmatch(r"[A-Za-z0-9/._-]*", voice.path)):
+        parser.error("--voice-url takes a plain http or https address, such as https://api.boson.ai/v1")
     options.voice_url = options.voice_url.rstrip("/")
+    if options.voice_key is not None:
+        try:
+            options.voice_key = shlex.split(options.voice_key)
+        except ValueError:
+            options.voice_key = []
+        if not options.voice_key:
+            parser.error("--voice-key takes a command that prints the key")
     if options.source:
         options.source = os.path.abspath(options.source)
     app = App(options)
