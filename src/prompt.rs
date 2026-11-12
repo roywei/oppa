@@ -468,7 +468,7 @@ pub(crate) fn turn_prompt(
             "now":now,"time_zone":time_zone,
             "surface":surface,"conversation":conversation,"requester":grant.requester,"requester_role":role,"first_reply_to_requester":first_reply,"audience":audience,"authority":authority,
             "profiles":profiles,"vault_revision":vault.revision()?,"trigger_event":trigger_event,
-            "registered_agents":config.agents.iter().map(|a| serde_json::json!({"id":a.id,"family":a.family,"model":a.model.as_deref().unwrap_or("the harness's default"),"effort":a.effort.as_deref().unwrap_or("medium")})).collect::<Vec<_>>(),"events":events,"prior_attempts":failures,
+            "registered_agents":config.agents.iter().map(|a| serde_json::json!({"id":a.id,"family":a.family,"model":a.model,"effort":a.effort.as_deref().unwrap_or("medium")})).collect::<Vec<_>>(),"events":events,"prior_attempts":failures,
             "history_window":history_window,"broker_context":grant.context,
             "conversation_access":{"current":conversation,"scopes":grant.conversation_scopes,"discovery_tool":"history.conversations"},
             "tools_available":true,

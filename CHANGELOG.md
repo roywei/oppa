@@ -8,7 +8,8 @@ First public release.
   beside the agent, which stays the choice of harness and provider; what a task leaves out is the agent's own
   from `config.toml`. The assistant is shown each registered agent's family, model and effort, and the manual
   has it fit the choice to the work and follow what the owner said in the rules note. A model the harness
-  cannot run fails the task with its reason. Existing instances gain two columns on the tasks table in place.
+  cannot run fails the task with its reason. Existing instances gain two columns on the tasks table in place; a build put back
+  after an upgrade still runs, but cannot read the receipt of a task that chose a model or effort.
 
 - The assistant has a soul and a face. Owners see two things: the Soul (`assistant/soul.md`: name, look,
   languages and personality, started from one of four presets in `resources/souls/`) and Memory. Every session

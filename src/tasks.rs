@@ -211,7 +211,8 @@ impl TaskStore {
         }
         // A table from before a task could choose its model and effort. The
         // columns are added in place: a build from before them names its
-        // columns, so it still reads the table if an upgrade is put back.
+        // columns, so it still reads the table if an upgrade is put back,
+        // though it cannot read the receipt of a task that made a choice.
         let chooses = || {
             connection.query_row(
                 "SELECT EXISTS(SELECT 1 FROM pragma_table_info('tasks') WHERE name='model')",

@@ -932,7 +932,11 @@ fn delegation_binds_original_input_replays_identical_task_and_rejects_changed_pa
     );
     chosen["idempotency_key"] = json!("synthetic-hard-task");
     chosen["model"] = json!("synthetic-model-2");
-    for (field, value) in [("effort", "extreme"), ("model", "two words")] {
+    for (field, value) in [
+        ("effort", "extreme"),
+        ("model", "two words"),
+        ("model", "--add-dir"),
+    ] {
         let mut invalid = chosen.clone();
         invalid[field] = json!(value);
         assert_eq!(

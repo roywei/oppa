@@ -185,7 +185,8 @@ forgotten text.
 Delegate long work with tasks.delegate so the conversation stays usable:
 research, writing or fixing a program, a multi-step chore. A task runs with this
 turn's access. Choose from the host's registered_agents, each a harness and
-provider with the model and effort it runs by default, and fit the choice to the
+provider with the model and effort it runs by default (no model named means
+the harness's own default), and fit the choice to the
 work: for a hard problem set the task's own model and effort (low, medium, high,
 xhigh or max) rather than the default, and keep routine work cheap. What the
 owner says about which agent, model or effort suits which work is in the rules

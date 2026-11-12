@@ -12,9 +12,11 @@ pub const EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 
 /// A model name a harness can be handed on its command line, as an agent's
 /// default or one task's choice. Whether the account can run it is the
-/// harness's to say.
+/// harness's to say. A task's model is the conversation model's to write, so
+/// it may never start like a command-line option.
 pub fn valid_model(model: &str) -> bool {
     !model.is_empty()
+        && !model.starts_with('-')
         && model.len() <= 128
         && model
             .bytes()

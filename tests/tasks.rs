@@ -200,6 +200,12 @@ fn a_task_keeps_its_chosen_model_and_effort_and_a_table_from_before_them_gains_t
     let tasks = fixture.tasks();
     let plain = fixture.create(&tasks);
     assert_eq!((&plain.spec.model, &plain.spec.effort), (&None, &None));
+    // A spec with no choice serializes as it did before there was one, so
+    // the digests of earlier tasks, receipts and journal records still hold.
+    assert_eq!(
+        serde_json::to_string(&plain.spec).unwrap(),
+        r#"{"agent":"worker","brief":"Compare synthetic notes A and B. 中文备注。","done_when":"A short recommendation names its source notes.","idempotency_key":"comparison"}"#
+    );
     drop(tasks);
     // The table as a build from before the choice left it.
     fixture
@@ -230,6 +236,7 @@ fn a_task_keeps_its_chosen_model_and_effort_and_a_table_from_before_them_gains_t
     for (model, effort) in [
         (Some("two words"), None),
         (Some(""), None),
+        (Some("--add-dir"), None),
         (None, Some("extreme")),
     ] {
         let mut invalid = spec();
