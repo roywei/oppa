@@ -17,7 +17,8 @@ their user id as its handle. This app's posts, `ask`'s included, are the assista
 
 In a direct chat a reply goes into the conversation; in a channel it goes into the thread of the message it
 answers, so a room stays readable. Text only: a file arrives as a bracketed note, and a send with
-attachments is refused. Long replies go out in parts of at most 3900 characters.
+attachments is refused. A reply goes out as Markdown, which Slack renders (tables, code blocks, links); a
+long one goes in parts that never cut a code block open, and no reply can page a room (slack_format.py).
 
 `oppa channels add slack` logs in: --login-link prints the manifest link, each --login-token reads one
 token from the clipboard (it never passes through a chat or a command line), checks it with Slack and keeps
@@ -50,11 +51,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import slack_format
+
 PROTOCOL_VERSION = 1
 NOT_SENT = 1001
 UNVERIFIED = 1002
 API_URL = "https://slack.com/api"
-PART = 3900
 MAX_ID = 4096
 MAX_BODY = 256 * 1024
 REQUEST_SECONDS = 20.0
@@ -353,8 +355,8 @@ class Adapter:
             # message's thread.
             thread = root if root and root != reply_to else (None if channel.startswith("D") else root or reply_to)
         receipt = None
-        for part in parts(mrkdwn(body)):
-            payload = {"channel": channel, "text": part, "unfurl_links": False}
+        for part in slack_format.parts(slack_format.quiet(body)):
+            payload = {"channel": channel, "markdown_text": part, "unfurl_links": False}
             if thread:
                 payload["thread_ts"] = thread
             try:
@@ -551,26 +553,6 @@ def readable(message, name_of):
         if isinstance(item, dict) and bounded(item.get("name"), 256):
             lines.append(f"[file: {item['name']}]")
     return "\n".join(lines).replace("\0", "")
-
-
-def mrkdwn(body):
-    """The model's Markdown as Slack's mrkdwn: escaped, bold, links and headings."""
-    body = body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    body = re.sub(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)", r"<\2|\1>", body)
-    body = re.sub(r"\*\*(.+?)\*\*", r"*\1*", body)
-    return re.sub(r"(?m)^#{1,6} +(.+)$", r"*\1*", body)
-
-
-def parts(body):
-    """At most PART characters each, cut at a paragraph, line or word break when one is in reach."""
-    pieces = []
-    while len(body) > PART:
-        window = body[:PART]
-        cut = max((window.rfind(mark) for mark in ("\n\n", "\n", " ")), default=-1)
-        cut = cut if cut > PART // 2 else PART
-        pieces.append(body[:cut].rstrip())
-        body = body[cut:].lstrip("\n") if body[cut:cut + 1] == "\n" else body[cut:].removeprefix(" ")
-    return pieces + ([body] if body.strip() else [])
 
 
 # Logging in -------------------------------------------------------------------

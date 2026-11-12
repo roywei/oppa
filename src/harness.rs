@@ -30,13 +30,17 @@ pub const HARNESS_ADAPTERS: [(&str, &str); 3] = [
     ("claude.py", include_str!("../resources/adapters/claude.py")),
     ("common.py", include_str!("../resources/adapters/common.py")),
 ];
-pub const CHANNEL_ADAPTERS: [(&str, &str); 5] = [
+pub const CHANNEL_ADAPTERS: [(&str, &str); 6] = [
     (
         "imessage.py",
         include_str!("../resources/adapters/imessage.py"),
     ),
     ("wechat.py", include_str!("../resources/adapters/wechat.py")),
     ("slack.py", include_str!("../resources/adapters/slack.py")),
+    (
+        "slack_format.py",
+        include_str!("../resources/adapters/slack_format.py"),
+    ),
     ("web.py", include_str!("../resources/adapters/web.py")),
     ("web.html", include_str!("../resources/adapters/web.html")),
 ];

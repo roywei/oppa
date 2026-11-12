@@ -69,16 +69,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if method == 'apps.connections.open':
             return self.answer({'ok': True, 'url': 'ws://127.0.0.1:%d/socket' % server.server_address[1]})
         if method == 'chat.postMessage':
-            if 'REFUSE' in args['text']:
+            text = args['markdown_text'] if 'markdown_text' in args else args['text']
+            if 'REFUSE' in text:
                 return self.answer({'ok': False, 'error': 'channel_not_found'})
             ts = stamp(); channel = args['channel']
             message = {'type': 'message', 'channel': channel, 'channel_type': 'im' if channel.startswith('D') else 'channel',
-                       'text': args['text'], 'ts': ts}
+                       'text': text, 'ts': ts}
             if args.get('thread_ts'): message['thread_ts'] = args['thread_ts']
             message.update({'user': 'U_BOT', 'bot_id': 'B_OPPA', 'app_id': 'A_OPPA'})
             threads.setdefault(args.get('thread_ts') or ts, []).append(message)
             drop(message)
-            if '<@U_GROK>' in args['text']:
+            if '<@U_GROK>' in text:
                 reply = {'type': 'message', 'channel': channel, 'channel_type': 'channel', 'user': 'U_GROK',
                          'bot_id': 'B_GROK', 'app_id': 'A_GROK', 'bot_profile': {'name': 'Grok Bot', 'app_id': 'A_GROK'},
                          'text': 'Thinking…', 'ts': stamp(), 'thread_ts': ts}
@@ -391,7 +392,10 @@ async fn the_owner_is_answered_in_line_in_a_direct_chat_and_in_the_thread_in_a_r
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0]["token"], "bot");
     assert_eq!(posts[0]["args"]["channel"], "D_OWNER");
-    assert_eq!(posts[0]["args"]["text"], "Reply to: Hi @Mo &amp; welcome");
+    assert_eq!(
+        posts[0]["args"]["markdown_text"],
+        "Reply to: Hi @Mo & welcome"
+    );
     assert!(posts[0]["args"].get("thread_ts").is_none(), "{}", posts[0]);
     let events = fixture.transcript(DM);
     assert_eq!(events[0].author, "synthetic-owner");
@@ -455,17 +459,22 @@ async fn the_owner_is_answered_in_line_in_a_direct_chat_and_in_the_thread_in_a_r
     assert!(fixture.contexts()[2].get("agents_on_slack").is_none());
 
     // A reply too long for one Slack message goes in parts; their echoes are
-    // that one reply, not more messages.
-    let long = format!("{}\n{}", "a".repeat(3000), "b".repeat(3000));
+    // that one reply, not more messages. A code block cut between two parts
+    // is closed in the first and opened again, with its language, in the next.
+    let (a, b) = ("a".repeat(3000), "b".repeat(3000));
+    let long = format!("intro\n```sh\n{a}\n{b}\n```");
     fixture.arrive(6, message("D_OWNER", "1790000006.000100", "U_OWNER", &long));
     fixture.until("both parts", |f| sent(f).len() == 5).await;
     tokio::time::sleep(Duration::from_millis(1500)).await;
     let posts = sent(&fixture);
     assert_eq!(
-        posts[3]["args"]["text"],
-        format!("Reply to: {}", "a".repeat(3000))
+        posts[3]["args"]["markdown_text"],
+        format!("Reply to: intro\n```sh\n{a}\n```")
     );
-    assert_eq!(posts[4]["args"]["text"], "b".repeat(3000));
+    assert_eq!(
+        posts[4]["args"]["markdown_text"],
+        format!("```sh\n{b}\n```")
+    );
     assert_eq!(
         fixture.transcript(DM).len(),
         6,
