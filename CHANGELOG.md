@@ -18,7 +18,7 @@ First public release.
   fails; after a turn none starts for the cooldown. An ask is owed a turn until one answers it: one made in the
   cooldown is held and reaches the next turn under `held` (five at most, the oldest dropped), one whose turn had
   not started when oppa stopped fires after the restart, and a run cut off mid-command reports that instead of
-  staying silent. `runs/watch-<id>.json` keeps the latest run and the asks still owed, which
+  staying silent. An ask counts as answered once its event is logged, as a schedule slot does. `runs/watch-<id>.json` keeps the latest run and the asks still owed, which
   `oppa schedules` shows as `last_run`. `oppa schedules add` takes `--every`, `--until` and `--cooldown`; at
   `computer` access `schedules.create` takes `watch` and `command`. The policy hash changes (the manual and the
   schedule tools), so sessions start afresh after an install. An earlier build cannot read a stored watch:

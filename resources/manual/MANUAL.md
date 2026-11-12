@@ -221,7 +221,7 @@ small script you write checks the source cheaply, and the host runs it every few
 minutes in its window without you. It prints a line {"trigger": true} only when
 the owner's instruction needs a turn; then the schedule's prompt fires with the
 script's output, and not again until the cooldown has passed. What the script
-asks for meanwhile is kept, never dropped: the next turn's event lists those
+asks for meanwhile is kept, the last five: the next turn's event lists those
 asks under held, oldest first, before the newest output. Have the script
 remember what it already reported, so a condition that holds does not fire
 again and again. A failing script fires too: fix it, or cancel the watch and

@@ -1592,10 +1592,17 @@ esac"#;
     assert_eq!(run("ask", at(2)).await, Some(true));
     assert_eq!(run("ask", at(4)).await, Some(false), "within the cooldown");
     assert_eq!(run("quiet", at(6)).await, Some(false), "the ask is held");
-    assert_eq!(run("fail", at(32)).await, Some(true), "a failure, after it");
-    assert_eq!(fs::read_to_string(&runs).unwrap().lines().count(), 5);
+    assert_eq!(turns(), 1);
+    assert_eq!(run("quiet", at(32)).await, Some(true), "after the cooldown");
+    assert_eq!(
+        run("quiet", at(34)).await,
+        None,
+        "answered asks are owed no more"
+    );
+    assert_eq!(run("fail", at(62)).await, Some(true), "a failure");
+    assert_eq!(fs::read_to_string(&runs).unwrap().lines().count(), 7);
     let requests = captured(dir.path(), "first");
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 3);
     let asked = schedule_body(&requests[0]);
     assert_eq!(
         (&asked["prompt"], &asked["slot"]),
@@ -1608,16 +1615,13 @@ esac"#;
         .as_str()
         .unwrap()
         .contains(r#""why": "SPY -2.0% intraday""#));
-    // The ask the cooldown held reaches the next turn, ahead of the newest.
-    let body = schedule_body(&requests[1]);
-    let held = body["held"].as_array().unwrap();
-    assert_eq!(held.len(), 1);
-    assert_eq!(held[0]["slot"], at(4).to_rfc3339());
-    assert!(held[0]["command"]["stdout"]
-        .as_str()
-        .unwrap()
-        .contains("SPY 701.18 to 686.90"));
-    let failed = &body["command"];
+    // The ask the cooldown held got the turn of the first run after it.
+    let held = schedule_body(&requests[1]);
+    assert_eq!(
+        (&held["slot"], held.get("held")),
+        (&Value::from(at(4).to_rfc3339()), None)
+    );
+    let failed = &schedule_body(&requests[2])["command"];
     assert_eq!(
         (&failed["ok"], &failed["failure"], &failed["stderr"]),
         (
@@ -1630,7 +1634,7 @@ esac"#;
     let listed = &oppa(&runtime, &["schedules"])[0];
     assert_eq!(
         (&listed["last_fired_slot"], &listed["last_state"]),
-        (&Value::from(at(32).to_rfc3339()), &Value::from("completed"))
+        (&Value::from(at(62).to_rfc3339()), &Value::from("completed"))
     );
     let last_run = &listed["last_run"];
     assert_eq!(
@@ -1640,45 +1644,70 @@ esac"#;
             &last_run["exit_status"]
         ),
         (
-            &Value::from(at(32).to_rfc3339()),
+            &Value::from(at(62).to_rfc3339()),
             &Value::from("failed"),
             &Value::from(2)
         )
     );
     // A watch fires only through its runs.
     assert!(runtime
-        .fire_schedule(&watch, &at(34), &mut ConsoleDelivery(|_: &str| Ok(())))
+        .fire_schedule(&watch, &at(64), &mut ConsoleDelivery(|_: &str| Ok(())))
         .await
         .is_err());
-    // Answered asks are owed nothing more.
-    assert_eq!(run("quiet", at(34)).await, None);
+    // Two asks in one cooldown reach one turn: the newest, the other held.
+    assert_eq!(run("ask", at(64)).await, Some(false));
+    assert_eq!(run("fail", at(66)).await, Some(false));
+    assert_eq!(run("quiet", at(92)).await, Some(true));
+    let both = schedule_body(&captured(dir.path(), "first")[3]);
+    assert_eq!(both["slot"], at(66).to_rfc3339());
+    assert_eq!(both["command"]["failure"], "exited with status 2");
+    let held = both["held"].as_array().unwrap();
+    assert_eq!(held.len(), 1);
+    assert_eq!(held[0]["slot"], at(64).to_rfc3339());
+    assert!(held[0]["command"]["stdout"]
+        .as_str()
+        .unwrap()
+        .contains("SPY 701.18 to 686.90"));
+    assert_eq!(run("quiet", at(94)).await, None);
     // An ask whose turn never started, as when oppa stops first, is still
     // owed: the same slot brings it again without running the command twice.
     fs::write(&mode, "ask").unwrap();
     let answered = watch.answered(&runtime.store).unwrap();
     let lost = watch
-        .watch_run(&at(70), &records, answered.as_deref())
+        .watch_run(&at(130), &records, answered.as_deref())
         .await
         .unwrap();
     assert!(lost.is_some());
-    assert_eq!(run("ask", at(70)).await, Some(true), "after a restart");
-    assert_eq!(fs::read_to_string(&runs).unwrap().lines().count(), 7);
+    assert_eq!(run("ask", at(130)).await, Some(true), "after a restart");
+    assert_eq!(fs::read_to_string(&runs).unwrap().lines().count(), 12);
     assert_eq!(
-        schedule_body(&captured(dir.path(), "first")[2])["slot"],
-        at(70).to_rfc3339()
+        schedule_body(&captured(dir.path(), "first")[4])["slot"],
+        at(130).to_rfc3339()
     );
-    // A slot that started and recorded no result was cut off: it is not run
-    // again, and its turn says so.
+    // A run that started and recorded no result was cut off: it is not run
+    // again, and a turn says so, whether its own slot finds it or a later one.
     let record = records.join("watch-spy.json");
-    let cut = serde_json::json!({"schedule":"spy","slot":at(110).to_rfc3339(),"state":"started"});
-    fs::write(&record, cut.to_string()).unwrap();
-    assert_eq!(run("ask", at(110)).await, Some(true), "a cut-off run");
-    assert_eq!(fs::read_to_string(&runs).unwrap().lines().count(), 7);
-    let cut = schedule_body(&captured(dir.path(), "first")[3]);
-    assert!(cut["command"]["failure"]
-        .as_str()
-        .unwrap()
-        .contains("recorded no result"));
+    let started = |slot: chrono::DateTime<chrono::Local>| {
+        let cut = serde_json::json!({"schedule":"spy","slot":slot.to_rfc3339(),"state":"started"});
+        fs::write(&record, cut.to_string()).unwrap();
+    };
+    let cut_off = |request: usize| {
+        let body = schedule_body(&captured(dir.path(), "first")[request]);
+        let failure = body["command"]["failure"].as_str().unwrap().to_owned();
+        (body["slot"].clone(), failure.contains("recorded no result"))
+    };
+    started(at(170));
+    assert_eq!(run("ask", at(170)).await, Some(true), "a cut-off run");
+    assert_eq!(fs::read_to_string(&runs).unwrap().lines().count(), 12);
+    assert_eq!(cut_off(5), (Value::from(at(170).to_rfc3339()), true));
+    started(at(210));
+    assert_eq!(
+        run("quiet", at(212)).await,
+        Some(true),
+        "found a slot later"
+    );
+    assert_eq!(fs::read_to_string(&runs).unwrap().lines().count(), 13);
+    assert_eq!(cut_off(6), (Value::from(at(210).to_rfc3339()), true));
 }
 
 #[tokio::test]

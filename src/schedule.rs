@@ -30,8 +30,8 @@ const RECORD_CHARS: usize = 1000;
 const CUT_OFF: &str = "it started for this slot before and recorded no result, so it was not \
     run again; oppa may have stopped while it ran";
 /// How many asks a watch holds for its next turn; past it the oldest goes.
-/// The held ones are cut to `RECORD_CHARS` of output and of errors, so they
-/// and the newest's instruction fit in the part of an event a turn is shown.
+/// The held ones are cut to `RECORD_CHARS` of output and of errors, to leave
+/// room for the newest in the part of an event a turn is shown.
 const MAX_OWED: usize = 5;
 /// A watch's quiet time after a turn when none is given.
 pub const DEFAULT_COOLDOWN: u32 = 30;
@@ -252,7 +252,7 @@ impl Schedule {
     /// interval at most, so runs never overlap. Its record,
     /// `runs/watch-<id>.json`, holds the latest run and the asks still owed.
     /// It is written before the command starts, so a slot runs once, even
-    /// across a restart: a slot the record shows started and never finished
+    /// across a restart: a run the record shows started and never finished
     /// was cut off, and is owed a turn that says so.
     pub async fn watch_run(
         &self,
@@ -272,22 +272,30 @@ impl Schedule {
             owed.drain(..=seen);
         }
         let ran = last["slot"] == slot_text.as_str();
-        if !ran || last["state"] == "started" {
-            let started_at = Utc::now().to_rfc3339();
-            let report = if ran {
-                CommandReport {
-                    argv: self.command.clone(),
-                    failure: Some(CUT_OFF.into()),
-                    ..Default::default()
-                }
-            } else {
+        // A run the record shows started and never finished was cut off,
+        // whichever slot finds it.
+        if last["state"] == "started" {
+            let cut = CommandReport {
+                argv: self.command.clone(),
+                failure: Some(CUT_OFF.into()),
+                ..Default::default()
+            };
+            owe(&mut owed, last["slot"].as_str().unwrap_or_default(), cut);
+            if ran {
                 atomic_json(
                     &record,
-                    &json!({"schedule":self.id,"slot":slot_text,"state":"started","started_at":started_at,"owed":owed}),
+                    &json!({"schedule":self.id,"slot":slot_text,"state":"failed","failure":CUT_OFF,"owed":owed}),
                 )?;
-                let timeout = self.timeout_seconds.min(u64::from(every) * 60);
-                run_command(&self.command, timeout).await
-            };
+            }
+        }
+        if !ran {
+            let started_at = Utc::now().to_rfc3339();
+            atomic_json(
+                &record,
+                &json!({"schedule":self.id,"slot":slot_text,"state":"started","started_at":started_at,"owed":owed}),
+            )?;
+            let timeout = self.timeout_seconds.min(u64::from(every) * 60);
+            let report = run_command(&self.command, timeout).await;
             let stdout = report.stdout.clone().unwrap_or_default();
             let state = match (report.ok, asks_for_turn(&stdout)) {
                 (false, _) => "failed",
@@ -299,23 +307,7 @@ impl Schedule {
             let skipped = stderr.chars().count().saturating_sub(RECORD_CHARS);
             let (exit_status, failure) = (report.exit_status, report.failure.clone());
             if state != "quiet" {
-                // An ask held behind a newer one keeps what the record keeps.
-                for held in &mut owed {
-                    if let Some(stdout) = &mut held.command.stdout {
-                        *stdout = stdout.chars().take(RECORD_CHARS).collect();
-                    }
-                    if let Some(stderr) = &mut held.command.stderr {
-                        let skipped = stderr.chars().count().saturating_sub(RECORD_CHARS);
-                        *stderr = stderr.chars().skip(skipped).collect();
-                    }
-                }
-                if owed.len() == MAX_OWED {
-                    owed.remove(0);
-                }
-                owed.push(Ask {
-                    slot: slot_text.clone(),
-                    command: report,
-                });
+                owe(&mut owed, &slot_text, report);
             }
             atomic_json(
                 &record,
@@ -793,6 +785,27 @@ struct CommandReport {
     stdout_truncated: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stdout: Option<String>,
+}
+
+/// Add a watch's ask to the ones owed a turn, `MAX_OWED` at most. Those now
+/// held behind it keep what the record keeps of a run.
+fn owe(owed: &mut Vec<Ask>, slot: &str, command: CommandReport) {
+    for held in owed.iter_mut() {
+        if let Some(stdout) = &mut held.command.stdout {
+            *stdout = stdout.chars().take(RECORD_CHARS).collect();
+        }
+        if let Some(stderr) = &mut held.command.stderr {
+            let skipped = stderr.chars().count().saturating_sub(RECORD_CHARS);
+            *stderr = stderr.chars().skip(skipped).collect();
+        }
+    }
+    if owed.len() == MAX_OWED {
+        owed.remove(0);
+    }
+    owed.push(Ask {
+        slot: slot.into(),
+        command,
+    });
 }
 
 /// Where a watch keeps the record of its latest run.
