@@ -9,8 +9,9 @@ First public release.
   A long reply still goes in parts of at most 3,900 characters, and a code block cut between two parts is now
   closed in the first and opened again in the next. @here, @channel and @everyone in a reply no longer notify
   anyone. The formatting lives in `adapters/slack_format.py`, a single file with no OPPA imports, so another
-  tool that posts to Slack can copy it. Checked against the synthetic Slack only: how a real workspace renders
-  `markdown_text`, and whether it accepts `&`, `<` and `>` unescaped, still needs one real message.
+  tool that posts to Slack can copy it. One real message on 2026-11-12 confirmed the path: Slack took
+  `markdown_text` from the app, with `&`, `<` and `>` unescaped, and stored it as a table block, a code block
+  and a list.
 
 - A background task chooses its own model and effort. `tasks.delegate` takes an optional `model` and `effort`
   beside the agent, which stays the choice of harness and provider; what a task leaves out is the agent's own
