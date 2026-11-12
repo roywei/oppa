@@ -719,6 +719,13 @@ enum Later {
     },
 }
 
+/// Whether a logged message still waits for its turn.
+fn turn_waits(later: &[(std::time::Instant, Later)]) -> bool {
+    later
+        .iter()
+        .any(|(_, waiting)| matches!(waiting, Later::Turn { .. }))
+}
+
 struct ConversationWorker {
     /// Each job goes with the configuration serve read for it, so the
     /// worker decides a turn from the same registry that named its sender.
@@ -1275,6 +1282,12 @@ fn spawn_worker(
                             report.error(&conversation, format!("watch {}: {error}", schedule.id));
                         }
                     }
+                    // A heartbeat or a wake is a read-only look. One that
+                    // comes while a message here waits for its turn would
+                    // read that message and could only answer it without
+                    // its author's reach, so the turn goes first: serve
+                    // hands the look over again on its next tick.
+                    Ok(Job::Heartbeat { .. } | Job::Wake { .. }) if turn_waits(&later) => {}
                     Ok(Job::Wake {
                         wake,
                         heartbeat,
@@ -1411,7 +1424,7 @@ fn spawn_worker(
                 // A held answer whose follow-up started no turn goes out once
                 // nothing is queued or waiting here.
                 let quiet = idle
-                    && !later.iter().any(|(_, waiting)| matches!(waiting, Later::Turn { .. }))
+                    && !turn_waits(&later)
                     && taken
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner())

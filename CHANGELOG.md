@@ -4,6 +4,13 @@
 
 First public release.
 
+- A heartbeat or a wake that comes due while a message waits for its turn runs after that turn. A message
+  waits `gather_seconds` for its author's follow-ups; a look handed over in that wait used to run first, read
+  the message and answer it read-only. On 2026-11-11 an owner who asked about something on the computer two
+  seconds before a heartbeat was told the turn could not look. The look is now left until serve's next tick,
+  up to 30 seconds after the message's turn ends. A look about a newcomer that falls in the same wait is not
+  held. Not yet run on a real instance.
+
 - Slack replies are sent as Markdown that Slack renders: tables, code blocks with their language, lists and
   links, where a reply used to be rewritten into Slack's older markup and showed tables and code as plain text.
   A long reply still goes in parts of at most 3,900 characters, and a code block cut between two parts is now
