@@ -16,7 +16,11 @@
 //! once that span is done, so a review that fails or times out is read again
 //! at the next slot, wherever the owner last wrote; the model judges what is
 //! worth keeping.
-use crate::{config::Paths, schedule::Schedule, store::Store};
+use crate::{
+    config::Paths,
+    schedule::Schedule,
+    store::{Event, Store},
+};
 use anyhow::{ensure, Result};
 use chrono::{DateTime, Local, TimeZone};
 use serde::{Deserialize, Serialize};
@@ -35,6 +39,12 @@ const IMPORT_HOURS: i64 = 3;
 const REVIEW_EVENTS: i64 = 100;
 const REVIEW_HOURS: u32 = 3;
 const REVIEW_LEFTOVER: i64 = 10;
+/// How long one review turn may run. Nobody waits for its reply, and it reads
+/// up to REVIEW_EVENTS events across every chat, fixes skills, writes memory
+/// and may delegate: an agent's reply deadline (two minutes on the incident's
+/// instance) cut it off mid-read, slot after slot. A catching-up slot that
+/// comes due meanwhile queues behind it and finds the span marked.
+const REVIEW_SECONDS: u64 = 900;
 
 const PROMPT: &str = "Memory sync. The command output lists what changed in the owner's Claude Code and Codex memory, and any other source they named, since the last sync; the first sync lists everything. OPPA memory is the source of truth. Read each changed file whole (its text is included while it fits; otherwise open its path), and bring what should last into OPPA memory with memory.commit: facts about the owner and the people around them, preferences, decisions and standing rules, each in the note where it belongs, with the source path and date. Leave out what is only about one code project or one session. Where a source contradicts OPPA memory, keep OPPA's note and tell the owner in one short message what differs and ask which is right. When the changes are in memory, run the output's mark command so they are not offered again. Return NO_REPLY unless something needs the owner.";
 
@@ -50,6 +60,22 @@ fn ten_minute_slot(now: DateTime<Local>) -> DateTime<Local> {
     let every = i64::from(IMPORT_EVERY_MINUTES) * 60;
     let instant = now.timestamp() - now.timestamp().rem_euclid(every);
     Local.timestamp_opt(instant, 0).single().unwrap_or(now)
+}
+
+/// The deadline of the turn `input` starts, given the agent's deadline for a
+/// reply: a review's slot gets REVIEW_SECONDS when that is longer. Schedule
+/// ids hold no colon, so only the host's review has this prefix.
+pub fn turn_seconds(input: &Event, reply: u64) -> u64 {
+    let review = input.kind == "schedule"
+        && input
+            .native_id
+            .as_deref()
+            .is_some_and(|id| id.starts_with(&format!("schedule:{REVIEW_ID}:")));
+    if review {
+        reply.max(REVIEW_SECONDS)
+    } else {
+        reply
+    }
 }
 
 /// The seqs finished reviews stopped at, one a line, appended by their mark
