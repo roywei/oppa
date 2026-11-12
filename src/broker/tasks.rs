@@ -22,6 +22,11 @@ pub(super) struct TaskDelegate {
     brief: String,
     done_when: String,
     idempotency_key: String,
+    // Left out when absent, so a call without them keeps its request digest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    effort: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -60,7 +65,7 @@ pub(super) fn definitions(grant: &RunGrant, context: &Value) -> Vec<Value> {
         tools.push(tool("tasks.read", "Read a task's brief, status and a Unicode result slice. Raw provider observations are not returned.", json!({"context":context,"task_id":{"type":"string"},"offset":{"type":"integer","minimum":0,"default":0},"max_chars":{"type":"integer","minimum":1,"maximum":64000,"default":16000}}), &["context","task_id"], true));
     }
     if grant.task_access == TaskAccess::Manage {
-        tools.push(tool("tasks.delegate", "Queue background work for a registered agent, run with the owner's access. Supply a concrete brief and completion condition. Reuse the same idempotency_key and identical brief to retrieve an existing task. The host binds requester and original conversation input; workers cannot delegate or write memory.", json!({"context":context,"agent":{"type":"string","enum":grant.eligible_agents},"brief":{"type":"string","minLength":1,"maxLength":65536},"done_when":{"type":"string","minLength":1,"maxLength":8192},"idempotency_key":{"type":"string","minLength":1,"maxLength":256}}), &["context","agent","brief","done_when","idempotency_key"], false));
+        tools.push(tool("tasks.delegate", "Queue background work for a registered agent, run with the owner's access. The agent is the harness and provider that does the work; registered_agents lists each one's family, model and effort. Set model or effort only to choose others for this task: a model name that agent's harness runs, and how hard it thinks. Supply a concrete brief and completion condition. Reuse the same idempotency_key and identical brief to retrieve an existing task. The host binds requester and original conversation input; workers cannot delegate or write memory.", json!({"context":context,"agent":{"type":"string","enum":grant.eligible_agents},"brief":{"type":"string","minLength":1,"maxLength":65536},"done_when":{"type":"string","minLength":1,"maxLength":8192},"idempotency_key":{"type":"string","minLength":1,"maxLength":256},"model":{"type":"string","minLength":1,"maxLength":128},"effort":{"type":"string","enum":crate::config::EFFORTS}}), &["context","agent","brief","done_when","idempotency_key"], false));
         tools.push(tool("tasks.stop", "Request a task stop. A running task stays running until its host confirms process termination; this response is not termination proof.", json!({"context":context,"task_id":{"type":"string"}}), &["context","task_id"], false));
     }
     tools
@@ -185,6 +190,17 @@ impl Broker {
                 return Err(invalid());
             }
         }
+        if args
+            .model
+            .as_deref()
+            .is_some_and(|model| !crate::config::valid_model(model))
+            || args
+                .effort
+                .as_deref()
+                .is_some_and(|effort| !crate::config::EFFORTS.contains(&effort))
+        {
+            return Err(invalid());
+        }
         let config = self
             .paths()
             .and_then(|paths| paths.load())
@@ -203,6 +219,8 @@ impl Broker {
             brief: args.brief.clone(),
             done_when: args.done_when.clone(),
             idempotency_key: args.idempotency_key.clone(),
+            model: args.model.clone(),
+            effort: args.effort.clone(),
         };
         let store = self.task_store().map_err(|_| unavailable())?;
         // Same immutable origin/key binding as TaskStore::create, needed before admission.
@@ -302,7 +320,8 @@ impl Broker {
 }
 
 fn task_summary(task: &Task) -> Value {
-    json!({"id":task.id,"origin":task.origin,"agent":task.spec.agent,"state":task.state,
+    json!({"id":task.id,"origin":task.origin,"agent":task.spec.agent,
+        "model":task.spec.model,"effort":task.spec.effort,"state":task.state,
         "generation":task.generation,"stop_requested":task.stop_requested,
         "diagnostic":task.diagnostic,"result_event_seq":task.result_event_seq,
         "presentation_state":task.presentation_state,"created_at":task.created_at,"updated_at":task.updated_at})

@@ -94,6 +94,8 @@ fn fixture() -> (TempDir, Paths, Runtime, TaskStore, Task) {
                 brief: "Read and synthesize synthetic notes.".into(),
                 done_when: "Evidence supports the conclusion.".into(),
                 idempotency_key: "synthesis".into(),
+                model: None,
+                effort: None,
             },
             &["fixture".into()],
         )

@@ -63,6 +63,10 @@ struct Fixture {
 }
 impl Fixture {
     fn new(mode: &str) -> Self {
+        Self::choosing(mode, None, None)
+    }
+    /// A fixture whose task chose its own model and effort.
+    fn choosing(mode: &str, model: Option<&str>, effort: Option<&str>) -> Self {
         let root = tempfile::tempdir().unwrap();
         let paths = Paths::new(
             root.path().join("runtime"),
@@ -149,6 +153,8 @@ impl Fixture {
                     brief: "Read the synthetic note and compare it with the request.".into(),
                     done_when: "Report the note's color with its source path.".into(),
                     idempotency_key: "synthetic-task".into(),
+                    model: model.map(Into::into),
+                    effort: effort.map(Into::into),
                 },
                 &["worker".into()],
             )
@@ -285,6 +291,43 @@ async fn a_delegated_task_runs_on_the_owners_model_effort_and_browser() {
     assert_eq!(capture["request"]["model"], "synthetic-model-1");
     assert_eq!(capture["request"]["effort"], "xhigh");
     assert_eq!(capture["request"]["browser"], true);
+}
+
+#[tokio::test]
+async fn a_task_that_chose_its_model_or_effort_runs_on_them_and_the_agents_for_the_rest() {
+    // The conversation model fits the model and effort to the work; what it
+    // leaves unchosen stays as the owner configured the agent.
+    for (model, effort, ran_model, ran_effort) in [
+        (
+            Some("synthetic-model-2"),
+            Some("max"),
+            "synthetic-model-2",
+            "max",
+        ),
+        (None, Some("low"), "synthetic-model-1", "low"),
+        (
+            Some("synthetic-model-2"),
+            None,
+            "synthetic-model-2",
+            "xhigh",
+        ),
+    ] {
+        let fixture = Fixture::choosing("complete", model, effort);
+        let mut config: Config =
+            toml::from_str(&fs::read_to_string(fixture.paths.config_file()).unwrap()).unwrap();
+        config.agents[0].model = Some("synthetic-model-1".into());
+        config.agents[0].effort = Some("xhigh".into());
+        fs::write(
+            fixture.paths.config_file(),
+            toml::to_string(&config).unwrap(),
+        )
+        .unwrap();
+        let result = fixture.worker().run_once().await.unwrap();
+        assert!(matches!(result, WorkResult::Finished { .. }));
+        let capture: Value = serde_json::from_slice(&fs::read(&fixture.capture).unwrap()).unwrap();
+        assert_eq!(capture["request"]["model"], ran_model);
+        assert_eq!(capture["request"]["effort"], ran_effort);
+    }
 }
 
 #[tokio::test]

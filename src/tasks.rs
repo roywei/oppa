@@ -24,7 +24,7 @@ use std::{
 };
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-const COLUMNS: &str = "id,requester,conversation,input_seq,agent,brief,done_when,idempotency_key,state,generation,worker,stop_requested,diagnostic,result_event_seq,presentation_state,reply_event_seq,created_at,updated_at";
+const COLUMNS: &str = "id,requester,conversation,input_seq,agent,brief,done_when,idempotency_key,state,generation,worker,stop_requested,diagnostic,result_event_seq,presentation_state,reply_event_seq,created_at,updated_at,model,effort";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,6 +41,13 @@ pub struct TaskSpec {
     pub brief: String,
     pub done_when: String,
     pub idempotency_key: String,
+    /// The model for this task alone; the agent's own when absent. Left out
+    /// of the serialized spec when absent, so earlier tasks keep their digests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// How hard the model thinks on this task alone; the agent's own when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -197,10 +204,32 @@ impl TaskStore {
             result_event_seq INTEGER REFERENCES events(seq),
             presentation_state TEXT CHECK(presentation_state IN ('started','completed')),
             reply_event_seq INTEGER REFERENCES events(seq),
-            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL, model TEXT, effort TEXT,
             UNIQUE(requester,conversation,input_seq,idempotency_key));
             CREATE INDEX IF NOT EXISTS tasks_queue ON tasks(state,created_at,id);",
         )?;
+        }
+        // A table from before a task could choose its model and effort. The
+        // columns are added in place: a build from before them names its
+        // columns, so it still reads the table if an upgrade is put back.
+        let chooses = || {
+            connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info('tasks') WHERE name='model')",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+        };
+        if !chooses()? {
+            // Serve and work open the store at once: look again under the
+            // write lock, so only one of them adds the columns.
+            let tx = Transaction::new_unchecked(&connection, TransactionBehavior::Immediate)?;
+            if !chooses()? {
+                tx.execute_batch(
+                    "ALTER TABLE tasks ADD COLUMN model TEXT;
+                    ALTER TABLE tasks ADD COLUMN effort TEXT;",
+                )?;
+            }
+            tx.commit()?;
         }
         Ok(Self {
             connection,
@@ -223,6 +252,14 @@ impl TaskStore {
         bounded(&spec.brief, 64 * 1024)?;
         bounded(&spec.done_when, 8 * 1024)?;
         ensure!(
+            spec.model.as_deref().is_none_or(crate::config::valid_model)
+                && spec
+                    .effort
+                    .as_deref()
+                    .is_none_or(|effort| crate::config::EFFORTS.contains(&effort)),
+            "task model or effort is not valid"
+        );
+        ensure!(
             eligible_agents.contains(&spec.agent),
             "task agent is not eligible"
         );
@@ -244,7 +281,7 @@ impl TaskStore {
             );
         } else {
             let now = now();
-            tx.execute("INSERT INTO tasks(id,requester,conversation,input_seq,agent,brief,done_when,idempotency_key,payload_digest,state,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'queued',?10,?10)", params![id,origin.requester,origin.conversation,origin.input_seq,spec.agent,spec.brief,spec.done_when,spec.idempotency_key,payload,now])?;
+            tx.execute("INSERT INTO tasks(id,requester,conversation,input_seq,agent,brief,done_when,idempotency_key,payload_digest,state,created_at,updated_at,model,effort) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'queued',?10,?10,?11,?12)", params![id,origin.requester,origin.conversation,origin.input_seq,spec.agent,spec.brief,spec.done_when,spec.idempotency_key,payload,now,spec.model,spec.effort])?;
         }
         let task = self.load(&tx, &id)?;
         self.board(&task)?;
@@ -765,6 +802,8 @@ fn task_row(row: &Row<'_>) -> rusqlite::Result<Task> {
             brief: row.get(5)?,
             done_when: row.get(6)?,
             idempotency_key: row.get(7)?,
+            model: row.get(18)?,
+            effort: row.get(19)?,
         },
         state: TaskState::parse(&row.get::<_, String>(8)?)?,
         generation: row.get(9)?,

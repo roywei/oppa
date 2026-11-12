@@ -224,7 +224,11 @@ access = "connectors"   # or "computer", or "read"
 The browser (Claude in Chrome, Codex browser use) is on unless `config.toml`
 says `browser = false`. Each `[[agents]]` entry may set `model` and `effort`
 (`low`, `medium`, `high`, `xhigh`, `max`; medium by default); hard work goes to
-a subagent at high effort either way.
+a subagent at high effort either way. Those are each agent's defaults: for a
+background task the assistant picks the agent (the harness and provider) and
+may give that one task its own model and effort, so "use Fable at max effort
+for this" needs no agent entry of its own. Tell it your preferences in chat and
+it keeps them in the rules note.
 
 Background tasks run with the same access setting as your turns, so
 at `computer` a delegated task can write and run a program; each agent's

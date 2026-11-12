@@ -115,6 +115,8 @@ fn spec() -> TaskSpec {
         brief: "Compare synthetic notes A and B. 中文备注。".into(),
         done_when: "A short recommendation names its source notes.".into(),
         idempotency_key: "comparison".into(),
+        model: None,
+        effort: None,
     }
 }
 fn completed() -> AttemptOutcome {
@@ -190,6 +192,55 @@ fn admission_is_durable_idempotent_and_adds_only_one_ordinary_table() {
         1,
         "task store appended a conversation event"
     );
+}
+
+#[test]
+fn a_task_keeps_its_chosen_model_and_effort_and_a_table_from_before_them_gains_the_columns() {
+    let fixture = Fixture::new();
+    let tasks = fixture.tasks();
+    let plain = fixture.create(&tasks);
+    assert_eq!((&plain.spec.model, &plain.spec.effort), (&None, &None));
+    drop(tasks);
+    // The table as a build from before the choice left it.
+    fixture
+        .sql()
+        .execute_batch("ALTER TABLE tasks DROP COLUMN model; ALTER TABLE tasks DROP COLUMN effort;")
+        .unwrap();
+    let tasks = fixture.tasks();
+    assert_eq!(tasks.get(&plain.id).unwrap(), plain);
+    // Its digest is the one it was admitted under: the same spec replays.
+    assert_eq!(fixture.create(&tasks), plain);
+    let mut chosen = spec();
+    chosen.idempotency_key = "hard-problem".into();
+    chosen.model = Some("synthetic-model-2".into());
+    chosen.effort = Some("max".into());
+    let task = tasks
+        .create(&fixture.origin, &chosen, &["worker".into()])
+        .unwrap();
+    assert_eq!(task.spec, chosen);
+    drop(tasks);
+    assert_eq!(fixture.tasks().get(&task.id).unwrap().spec, chosen);
+    // The same key with another effort is changed work, not a replay.
+    let tasks = fixture.tasks();
+    let mut other = chosen.clone();
+    other.effort = Some("low".into());
+    assert!(tasks
+        .create(&fixture.origin, &other, &["worker".into()])
+        .is_err());
+    for (model, effort) in [
+        (Some("two words"), None),
+        (Some(""), None),
+        (None, Some("extreme")),
+    ] {
+        let mut invalid = spec();
+        invalid.idempotency_key = "invalid-choice".into();
+        invalid.model = model.map(Into::into);
+        invalid.effort = effort.map(Into::into);
+        assert!(tasks
+            .create(&fixture.origin, &invalid, &["worker".into()])
+            .is_err());
+    }
+    assert_eq!(tasks.list(Some("chat"), 100).unwrap().len(), 2);
 }
 
 #[test]

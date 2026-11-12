@@ -7,6 +7,20 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// How hard a model thinks, as an agent's default or one task's choice.
+pub const EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
+
+/// A model name a harness can be handed on its command line, as an agent's
+/// default or one task's choice. Whether the account can run it is the
+/// harness's to say.
+pub fn valid_model(model: &str) -> bool {
+    !model.is_empty()
+        && model.len() <= 128
+        && model
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._:[]/-".contains(&b))
+}
+
 /// Sources that shape what a model sees or may call. A change to any of them
 /// invalidates cached native sessions; tests/policy.rs checks that every broker
 /// tool family is listed.
@@ -401,13 +415,11 @@ impl Config {
             {
                 bail!("invalid or duplicate agent manifest");
             }
-            if agent.model.as_deref().is_some_and(|model| {
-                model.is_empty()
-                    || model.len() > 128
-                    || !model
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b"._:[]/-".contains(&b))
-            }) {
+            if agent
+                .model
+                .as_deref()
+                .is_some_and(|model| !valid_model(model))
+            {
                 bail!(
                     "agent {}: model must be a model name, such as claude-opus-5-5",
                     agent.id
@@ -416,7 +428,7 @@ impl Config {
             if agent
                 .effort
                 .as_deref()
-                .is_some_and(|effort| !["low", "medium", "high", "xhigh", "max"].contains(&effort))
+                .is_some_and(|effort| !EFFORTS.contains(&effort))
             {
                 bail!(
                     "agent {}: effort must be low, medium, high, xhigh or max",

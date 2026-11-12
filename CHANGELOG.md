@@ -4,6 +4,12 @@
 
 First public release.
 
+- A background task chooses its own model and effort. `tasks.delegate` takes an optional `model` and `effort`
+  beside the agent, which stays the choice of harness and provider; what a task leaves out is the agent's own
+  from `config.toml`. The assistant is shown each registered agent's family, model and effort, and the manual
+  has it fit the choice to the work and follow what the owner said in the rules note. A model the harness
+  cannot run fails the task with its reason. Existing instances gain two columns on the tasks table in place.
+
 - The assistant has a soul and a face. Owners see two things: the Soul (`assistant/soul.md`: name, look,
   languages and personality, started from one of four presets in `resources/souls/`) and Memory. Every session
   reads three notes, soul first: the soul, the owner's own profile `people/<owner>/profile.md` (who they are and

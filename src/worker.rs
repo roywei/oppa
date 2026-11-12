@@ -298,8 +298,9 @@ impl Worker {
                     .to_string_lossy()
                     .into(),
             ),
-            model: agent.model.clone(),
-            effort: agent.effort.clone(),
+            // The task's own choice, else the agent's.
+            model: task.spec.model.clone().or_else(|| agent.model.clone()),
+            effort: task.spec.effort.clone().or_else(|| agent.effort.clone()),
             browser: config.browser,
             access: run.launch.grant.access,
             readable_dir: None,

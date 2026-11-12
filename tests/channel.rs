@@ -527,6 +527,8 @@ async fn task_result_is_presented_over_the_channel_once() {
                 brief: "Summarize the synthetic notes.".into(),
                 done_when: "A summary exists.".into(),
                 idempotency_key: "summary".into(),
+                model: None,
+                effort: None,
             },
             &["harness".into()],
         )

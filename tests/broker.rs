@@ -920,6 +920,32 @@ fn delegation_binds_original_input_replays_identical_task_and_rejects_changed_pa
     );
     let tasks = oppa::tasks::TaskStore::open(&task_paths(&fixture), "synthetic-owner").unwrap();
     assert_eq!(tasks.list(Some("owner-chat"), 100).unwrap().len(), 1);
+    assert_eq!(first["task"]["model"], Value::Null);
+    assert_eq!(first["task"]["effort"], Value::Null);
+    // A task may choose its own model and effort; the old key with a new
+    // choice is changed work.
+    let mut chosen = task_args(&fixture);
+    chosen["effort"] = json!("max");
+    assert_eq!(
+        code(fixture.broker.call("tasks.delegate", chosen.clone())),
+        "invalid_arguments"
+    );
+    chosen["idempotency_key"] = json!("synthetic-hard-task");
+    chosen["model"] = json!("synthetic-model-2");
+    for (field, value) in [("effort", "extreme"), ("model", "two words")] {
+        let mut invalid = chosen.clone();
+        invalid[field] = json!(value);
+        assert_eq!(
+            code(fixture.broker.call("tasks.delegate", invalid)),
+            "invalid_arguments"
+        );
+    }
+    let hard = success(fixture.broker.call("tasks.delegate", chosen));
+    assert_eq!(hard["task"]["model"], "synthetic-model-2");
+    assert_eq!(hard["task"]["effort"], "max");
+    let stored = tasks.get(hard["task"]["id"].as_str().unwrap()).unwrap();
+    assert_eq!(stored.spec.model.as_deref(), Some("synthetic-model-2"));
+    assert_eq!(stored.spec.effort.as_deref(), Some("max"));
     let observation = fixture.broker.observations().unwrap();
     assert_eq!(observation["activity"], "effect");
     assert_eq!(observation["writes"][0]["tool"], "tasks.delegate");
@@ -957,6 +983,8 @@ fn task_scope_stays_at_original_conversation_even_with_wider_history() {
                 brief: "Other scoped sentinel".into(),
                 done_when: "Done".into(),
                 idempotency_key: "other".into(),
+                model: None,
+                effort: None,
             },
             &["synthetic".into()],
         )
