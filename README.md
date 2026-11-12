@@ -172,6 +172,20 @@ hold chat, the assistant's soul (its name, face and personality), its memory
 the assistant could improve about itself it tells you in its morning message.
 Delete `<runtime>/channels/web/token` to sign every browser out.
 
+Voice on the page is off until you add `"--voice-key", "<command that prints the key>"` to that command, such
+as a read from your password manager. It uses Boson's Higgs Realtime (`--voice-url` names another address
+that speaks the same protocol). Two buttons appear beside Send. Hold the microphone, speak, release: what was
+heard is sent as if you had typed it. The other button keeps a live conversation open: a fast voice model
+talks with you, answers small talk itself and hands everything else to the assistant in your own words.
+Either way the reply is on the page in full and the voice says a short form of it. The provider's key stays
+on the Mac; the page gets a key that opens one session and connects to the provider itself, so audio does
+not pass through OPPA. Live small talk that the voice model answers itself is not in OPPA's log.
+
+To use the page, and its microphone, from your phone, put a private HTTPS name in front of it and tell the
+adapter that name: with Tailscale, `tailscale serve --bg 8765`, then add `"--host", "<mac>.<tailnet>.ts.net"`
+to the command. The server still listens on 127.0.0.1 only. Open the address in
+`<runtime>/channels/web/remote-login-url` on the phone once.
+
 The iMessage adapter starts at the current end of the Messages database on first
 run and never answers older history. Its watch cursor lives in `--state`; after a restart it
 replays a short overlap, which the host logs once. Do not run it on an account

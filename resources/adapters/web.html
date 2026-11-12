@@ -182,6 +182,10 @@ textarea { line-height: 1.5; resize: vertical; }
 .composer-problem { padding: 0 2px 6px; color: var(--danger); font-size: 13px; }
 .composer-problem:empty { display: none; }
 .send { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+.send.voice { border: 1px solid var(--border); background: transparent; color: var(--text); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.send.voice.on { border-color: var(--danger); background: var(--danger); color: var(--accent-ink); }
+.voice-status { padding: 0 2px 6px; color: var(--muted); font-size: 13px; }
+.voice-status:empty { display: none; }
 
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12.5px; font-weight: 600; text-align: left; white-space: nowrap; }
@@ -327,6 +331,8 @@ const ICONS = {
   refresh: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4',
   check: 'M5 12.5l4.5 4.5L19 7.5',
   cross: 'M7 7l10 10M17 7L7 17',
+  mic: 'M12 3.5a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0v-5a3 3 0 0 0-3-3zM5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3',
+  wave: 'M4 10v4M8 6v12M12 9v6M16 4v16M20 10v4',
   alert: 'M12 8v5M12 16.5v.01M10.3 3.9L2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
   branch: 'M6 4v11M18 9a2.5 2.5 0 1 0 0-5a2.5 2.5 0 0 0 0 5zM6 20a2.5 2.5 0 1 0 0-5a2.5 2.5 0 0 0 0 5zM18 9c0 4-3.5 5.5-11 6.5',
 };
@@ -580,6 +586,7 @@ function viewChat(view) {
   chat.box = h('div', {class: 'messages', 'aria-live': 'polite', 'aria-label': 'Messages'});
   chat.input = h('textarea', {rows: '1', placeholder: 'Message the assistant', 'aria-label': 'Message'});
   chat.problem = h('div', {class: 'composer-problem', role: 'alert'});
+  const speak = app.session && app.session.voice ? voiceButtons() : [];
   chat.input.addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
@@ -592,7 +599,7 @@ function viewChat(view) {
     h('section', {class: 'conversation'},
       h('div', {class: 'conversation-head'}, h('div', {class: 'picker'}, chat.select, newChat()), chat.title, chat.subtitle),
       chat.box,
-      h('div', {class: 'composer'}, chat.problem, h('div', {class: 'composer-row'}, chat.input,
+      h('div', {class: 'composer'}, chat.problem, voice.status, h('div', {class: 'composer-row'}, chat.input, speak,
         h('button', {class: 'send', type: 'button', title: 'Send (Enter)', 'aria-label': 'Send', onclick: sendMessage}, icon('send')))))));
   renderThreads();
   loadThreads().then(() => openThread(chat.thread));
@@ -781,6 +788,257 @@ function scrollDown(force) {
   if (box && (force || box.scrollHeight - box.scrollTop - box.clientHeight < 160)) box.scrollTop = box.scrollHeight;
 }
 
+// Voice -------------------------------------------------------------------------
+// The page connects to the voice provider itself, with a key from this Mac that
+// opens one session. Hold the microphone to say one message: what was heard is
+// sent as if typed. Live keeps the line open: the voice model answers small
+// talk itself and hands everything else to the assistant, in the owner's own
+// words when it has them. Either way the assistant's reply is on the page in
+// full, and the voice model says a short form of it.
+
+const VOICE_BRIEF = 'You are the voice of the owner\'s personal assistant, talking with the owner. You know nothing ' +
+  'about their data and can do nothing yourself. Answer small talk and simple general questions in one or two short ' +
+  'sentences. For anything about the owner\'s own data, accounts, files, messages, calendar or home, and for any real ' +
+  'work, call delegate. A message that starts with [Assistant result] is the assistant\'s answer to an earlier ' +
+  'request: tell the owner that answer in one or two short spoken sentences, without lists, and say the rest is on ' +
+  'screen when you leave something out. Never make up a result.';
+const VOICE_RATES = [8000, 16000, 24000, 48000];
+
+const voice = {
+  ws: null, ctx: null, stream: null, node: null, mode: null, thread: null, generation: 0, ready: false,
+  held: false, capturing: false, commitDue: false, frames: [], busy: false, results: [], heard: '',
+  sources: new Set(), playAt: 0, carry: null, hold: null, live: null, status: h('div', {class: 'voice-status', role: 'status'}),
+};
+
+function voiceButtons() {
+  voice.hold = h('button', {class: 'send voice', type: 'button', title: 'Hold to talk', 'aria-label': 'Hold to talk',
+    onpointerdown: voicePress, onpointerup: voiceRelease, onpointercancel: voiceRelease, onpointerleave: voiceRelease,
+    oncontextmenu: event => event.preventDefault()}, icon('mic'));
+  voice.live = h('button', {class: 'send voice', type: 'button', title: 'Live conversation', 'aria-label': 'Live conversation',
+    'aria-pressed': 'false', onclick: voiceToggleLive}, icon('wave'));
+  return [voice.hold, voice.live];
+}
+
+function voiceSay(text) { voice.status.textContent = text; }
+
+function voiceSend(event) {
+  if (voice.ws && voice.ready && voice.ws.readyState === 1) voice.ws.send(JSON.stringify(event));
+}
+
+function voiceBase64(bytes) {
+  let text = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(text);
+}
+
+function voiceHush() {
+  for (const source of voice.sources) { try { source.stop(); } catch (_) { /* already ended */ } }
+  voice.sources.clear();
+  voice.playAt = 0;
+  voice.carry = null;
+}
+
+// Provider audio is 16-bit, 24 kHz, mono; a chunk may end in the middle of a sample.
+function voicePlay(encoded) {
+  if (!voice.ctx) return;
+  const raw = atob(encoded);
+  let bytes = new Uint8Array(raw.length + (voice.carry === null ? 0 : 1));
+  let at = 0;
+  if (voice.carry !== null) bytes[at++] = voice.carry;
+  for (let i = 0; i < raw.length; i++) bytes[at++] = raw.charCodeAt(i);
+  voice.carry = bytes.length % 2 ? bytes[bytes.length - 1] : null;
+  const samples = bytes.length >> 1;
+  if (!samples) return;
+  const buffer = voice.ctx.createBuffer(1, samples, 24000);
+  const channel = buffer.getChannelData(0);
+  const view = new DataView(bytes.buffer);
+  for (let i = 0; i < samples; i++) channel[i] = view.getInt16(i * 2, true) / 32768;
+  const source = voice.ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(voice.ctx.destination);
+  const start = Math.max(voice.ctx.currentTime + 0.03, voice.playAt);
+  source.start(start);
+  voice.playAt = start + buffer.duration;
+  voice.sources.add(source);
+  source.onended = () => voice.sources.delete(source);
+}
+
+function voiceClose(note) {
+  voice.generation++;
+  voice.ready = voice.capturing = voice.held = voice.commitDue = voice.busy = false;
+  voice.frames = [];
+  voice.results = [];
+  voice.heard = '';
+  voiceHush();
+  if (voice.ws) { voice.ws.onclose = voice.ws.onmessage = voice.ws.onerror = null; try { voice.ws.close(); } catch (_) { /* closed */ } }
+  if (voice.node) { voice.node.onaudioprocess = null; try { voice.node.disconnect(); } catch (_) { /* gone */ } }
+  if (voice.stream) for (const track of voice.stream.getTracks()) track.stop();
+  if (voice.ctx) voice.ctx.close().catch(() => {});
+  voice.ws = voice.ctx = voice.stream = voice.node = voice.mode = null;
+  if (voice.hold) voice.hold.classList.remove('on');
+  if (voice.live) { voice.live.classList.remove('on'); voice.live.setAttribute('aria-pressed', 'false'); }
+  voiceSay(note || '');
+}
+
+// Opens the microphone and the provider session for one mode. Called from a
+// tap, which a phone browser requires before it lets a page record or play.
+async function voiceOpen(mode) {
+  if (voice.ws && voice.mode === mode) return true;
+  voiceClose();
+  const generation = voice.generation;
+  voice.mode = mode;
+  voice.thread = chat.thread;
+  try {
+    if (!navigator.mediaDevices || !window.isSecureContext) throw new Error('This browser gives the microphone only to a page opened over HTTPS or on this Mac.');
+    voice.ctx = new (window.AudioContext || window.webkitAudioContext)({sampleRate: 24000});
+    if (!VOICE_RATES.includes(voice.ctx.sampleRate)) throw new Error('This browser cannot record at a rate the voice provider takes.');
+    const granted = api('/api/voice/session', {method: 'POST', body: {}});
+    granted.catch(() => {});
+    const stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}});
+    if (generation !== voice.generation) { for (const track of stream.getTracks()) track.stop(); return false; }
+    voice.stream = stream;
+    const session = await granted;
+    if (generation !== voice.generation) return false;
+    voice.node = voice.ctx.createScriptProcessor(2048, 1, 1);
+    voice.node.onaudioprocess = event => {
+      if (!voice.capturing) return;
+      const input = event.inputBuffer.getChannelData(0);
+      const pcm = new Int16Array(input.length);
+      for (let i = 0; i < input.length; i++) pcm[i] = Math.max(-32768, Math.min(32767, Math.round(input[i] * 32767)));
+      const frame = voiceBase64(new Uint8Array(pcm.buffer));
+      if (voice.ready) voiceSend({type: 'input_audio_buffer.append', audio: frame});
+      else if (voice.frames.length < 600) voice.frames.push(frame);
+    };
+    voice.ctx.createMediaStreamSource(stream).connect(voice.node);
+    voice.node.connect(voice.ctx.destination);
+    const ws = new WebSocket(session.url, ['realtime', 'bai-client-secret.' + session.secret]);
+    voice.ws = ws;
+    ws.onopen = () => {
+      if (generation !== voice.generation) return;
+      const live = mode === 'live';
+      ws.send(JSON.stringify({type: 'session.update', session: {
+        model: session.model, output_modalities: ['audio'], instructions: VOICE_BRIEF,
+        audio: {input: {format: {type: 'audio/pcm', rate: voice.ctx.sampleRate},
+                        turn_detection: live ? {type: 'server_vad'} : null, transcription: {model: 'higgs-stt-3.1'}},
+                output: {voice: 'default'}},
+        tools: live ? [{type: 'function', name: 'delegate',
+          description: 'Hand a request to the assistant, which has the owner\'s data and tools and does the work.',
+          parameters: {type: 'object', properties: {request: {type: 'string', description: 'The request in the owner\'s own words.'}}, required: ['request']}}] : [],
+      }}));
+      voice.ready = true;
+      for (const frame of voice.frames.splice(0)) voiceSend({type: 'input_audio_buffer.append', audio: frame});
+      if (voice.commitDue) { voice.commitDue = false; voiceSend({type: 'input_audio_buffer.commit'}); }
+    };
+    ws.onmessage = event => { if (generation === voice.generation) voiceEvent(JSON.parse(event.data)); };
+    ws.onclose = () => { if (generation === voice.generation) voiceClose(voice.ready ? 'Voice session ended.' : 'The voice provider did not accept the session.'); };
+    return true;
+  } catch (error) {
+    if (generation === voice.generation) voiceClose(error.name === 'NotAllowedError' ? 'The browser did not allow the microphone.' : error.message);
+    return false;
+  }
+}
+
+function voiceEvent(event) {
+  const type = event.type;
+  if (type === 'response.output_audio.delta') {
+    voicePlay(event.delta);
+  } else if (type === 'input_audio_buffer.speech_started') {
+    voiceHush();           // the owner cut in
+    voice.heard = '';
+  } else if (type === 'conversation.item.input_audio_transcription.completed') {
+    const text = (event.transcript || '').trim();
+    if (voice.mode === 'live') { voice.heard = text; return; }
+    if (text) { voiceSay(''); voiceSubmit(text); } else voiceSay('Nothing was heard.');
+  } else if (type === 'response.created') {
+    voice.busy = true;
+  } else if (type === 'response.done') {
+    voice.busy = false;
+    let handed = false;
+    for (const item of (event.response && event.response.output) || []) {
+      if (item.type !== 'function_call' || item.name !== 'delegate' || item.executor === 'server') continue;
+      let asked = '';
+      try { asked = String(JSON.parse(item.arguments || '{}').request || ''); } catch (_) { /* no arguments */ }
+      const text = voice.heard || asked.trim();
+      voice.heard = '';
+      if (text) voiceSubmit(text);
+      voiceSend({type: 'conversation.item.create', item: {type: 'function_call_output', call_id: item.call_id,
+        output: text ? 'The assistant has the request and is working on it. Its answer will arrive as an [Assistant result] message. Tell the owner you are on it, in a few words.' : 'Nothing was sent: the request was empty.'}});
+      handed = true;
+    }
+    if (handed) voiceSend({type: 'response.create'});
+    else voiceFlush();
+  } else if (type === 'error') {
+    const message = (event.error && event.error.message) || 'The voice provider reported an error.';
+    if (!/ongoing/i.test(message)) voiceSay(message);
+  } else if (type === 'session.idle_timeout' || type === 'session.max_duration_reached') {
+    voiceClose('Voice session ended.');
+  }
+}
+
+// What was heard goes out as a message the owner typed, in the thread where the voice session began.
+function voiceSubmit(text) {
+  if (chat.box && chat.thread === voice.thread && !chat.loading) {
+    const draft = chat.input.value;
+    chat.input.value = text;
+    sendMessage();
+    chat.input.value = draft;
+    grow(chat.input);
+  } else {
+    api('/api/send', {method: 'POST', body: {thread: voice.thread, body: text}}).catch(error => toast(error.message, 'bad'));
+  }
+}
+
+// A reply that arrives while a voice session is open is given to the voice model to say in short form.
+function voiceResult(item) {
+  if (!voice.ws || !voice.ready || item.thread !== voice.thread) return;
+  voice.results.push(String(item.body || '').slice(0, 6000));
+  voiceFlush();
+}
+
+function voiceFlush() {
+  if (voice.busy || !voice.results.length) return;
+  voice.busy = true;
+  voiceSend({type: 'conversation.item.create', item: {type: 'message', role: 'user',
+    content: [{type: 'input_text', text: '[Assistant result] ' + voice.results.shift()}]}});
+  voiceSend({type: 'response.create'});
+}
+
+async function voicePress(event) {
+  event.preventDefault();
+  if (voice.held) return;
+  voiceHush();
+  // Opening resets the session state, so the hold is marked after it starts. Capture begins at once;
+  // frames wait until the session is open.
+  const opening = voiceOpen('turn');
+  if (!voice.mode) return;
+  voice.held = voice.capturing = true;
+  voice.hold.classList.add('on');
+  voiceSay('Listening. Release to send.');
+  voiceSend({type: 'input_audio_buffer.clear'});
+  await opening;
+}
+
+function voiceRelease() {
+  if (!voice.held) return;
+  voice.held = false;
+  voice.hold.classList.remove('on');
+  if (voice.mode !== 'turn') return;
+  voice.capturing = false;
+  voiceSay('Heard. Sending.');
+  if (voice.ready) voiceSend({type: 'input_audio_buffer.commit'});
+  else voice.commitDue = true;
+}
+
+async function voiceToggleLive() {
+  if (voice.mode === 'live') return voiceClose();
+  voiceSay('Connecting.');
+  if (!await voiceOpen('live')) return;
+  voice.live.classList.add('on');
+  voice.live.setAttribute('aria-pressed', 'true');
+  voice.capturing = true;
+  voiceSay('Live. Tap again to end.');
+}
+
 async function poll() {
   let pause = 1000;
   for (;;) {
@@ -798,6 +1056,7 @@ async function poll() {
       }
       for (const item of data.items) {
         if (item.direction === 'out') delete chat.waitingSince[item.thread];
+        if (item.direction === 'out') voiceResult(item);
         if (chat.box && item.thread === chat.thread) acceptItem(item);
         else if (item.direction === 'out') chat.unread.add(item.thread);
         touchThread(item.thread, item.at);

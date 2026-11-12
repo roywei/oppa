@@ -15,8 +15,18 @@ refuses a Host header other than its own address (DNS rebinding) and a write
 whose Origin is another site, and requires the cookie that the login link in
 `<state>/login-url` sets. The token and message bodies are never logged.
 
+`--host NAME` adds one more address the server answers to, for a proxy on this Mac that gives the page a
+name and HTTPS, such as `tailscale serve`; the server still listens on loopback only, and the login link for
+that name is in `<state>/remote-login-url`. A phone browser opens the microphone only over HTTPS.
+
+`--voice-key COMMAND` turns on voice. The command prints the voice provider's API key (a password manager's
+read, for example); the key stays in this process. For each voice session the page gets a key that works
+for ten minutes, and connects to the provider itself, so audio does not pass through this adapter. What is
+heard becomes an ordinary message typed by the owner; the reply is an ordinary reply.
+
 Usage: web.py --state DIR --home DIR --private-dir DIR [--oppa PATH]
               [--port 8765] [--bind 127.0.0.1] [--source DIR] [--channel web]
+              [--host NAME]... [--voice-key COMMAND [--voice-url URL]]
 """
 
 import argparse
@@ -32,6 +42,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import signal
 import socketserver
 import subprocess
@@ -39,7 +50,9 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 
 PROTOCOL_VERSION = 1
 NOT_SENT = 1001
@@ -51,6 +64,9 @@ MAX_PROMPT = 8000               # a schedule's instruction, in characters
 MAX_ERROR = 400                 # an error message for the page
 CLI_SECONDS = 20
 DOCTOR_SECONDS = 120
+VOICE_SECONDS = 20
+VOICE_MODEL = "higgs-realtime"
+VOICE_KEY_SECONDS = 600         # how long the page's key can open a session
 POLL_SECONDS = 25
 REPLY_WAIT_SECONDS = 300        # how long the page shows typing dots without a reply
 FEED_ITEMS = 2000
@@ -343,12 +359,19 @@ class App:
         self.port = None
         self.failure = None
         self.hosts = set()
+        self.remote = set()
         self.cookie = "oppa_web"
+        self.voice_key = None
+        voice = urllib.parse.urlsplit(options.voice_url)
+        self.voice_socket = "%s://%s" % ("wss" if voice.scheme == "https" else "ws", voice.netloc)
         try:
             self.page, self.policy = load_page()
         except (OSError, UnicodeDecodeError):
             self.page, self.policy = None, None
             self.failure = "web.html is missing or unreadable next to web.py"
+        if self.policy and options.voice_key:
+            # The page itself connects to the voice provider, and nowhere else.
+            self.policy = self.policy.replace("connect-src 'self'", "connect-src 'self' " + self.voice_socket)
 
     def listen(self):
         options = self.options
@@ -367,11 +390,16 @@ class App:
         self.hosts = {"%s:%d" % (name, self.port) for name in names}
         if self.port == 80:
             self.hosts.update(names)
+        self.remote = {name.lower() for name in options.host}
+        self.hosts.update(self.remote)
         # Cookies are per host, not per port: name this one after its port.
         self.cookie = "oppa_web_%d" % self.port
         address = options.bind if options.bind != "0.0.0.0" else "127.0.0.1"
         write_private(os.path.join(self.state, "login-url"),
                       "http://%s:%d/login?token=%s\n" % (address, self.port, self.token))
+        if options.host:
+            write_private(os.path.join(self.state, "remote-login-url"),
+                          "".join("https://%s/login?token=%s\n" % (name, self.token) for name in options.host))
         self.server = server
         threading.Thread(target=server.serve_forever, daemon=True).start()
         # Last, so whoever waits for the port finds the login link beside it.
@@ -407,7 +435,37 @@ class App:
 
     def route_session(self, query, body):
         return {"channel": self.options.channel, "account": self.account, "connected": self.account is not None,
-                "source": bool(self.options.source), "epoch": self.feed.epoch}
+                "source": bool(self.options.source), "epoch": self.feed.epoch, "voice": bool(self.options.voice_key)}
+
+    def route_voice_session(self, query, body):
+        """A key the page can open one voice session with. The provider's own key never leaves this process."""
+        if not self.options.voice_key:
+            raise Refused(404, "Voice is not set up for this web channel.")
+        if self.voice_key is None:
+            code, out, _ = run_bounded(shlex.split(self.options.voice_key), VOICE_SECONDS)
+            key = out.decode("utf-8", "replace").strip()
+            if code != 0 or not key or "\n" in key:
+                raise Refused(502, "The voice key command did not print a key.")
+            self.voice_key = key
+        request = urllib.request.Request(
+            self.options.voice_url + "/realtime/client_secrets",
+            json.dumps({"expires_after": {"anchor": "created_at", "seconds": VOICE_KEY_SECONDS}}).encode(),
+            {"Authorization": "Bearer " + self.voice_key, "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(request, timeout=VOICE_SECONDS) as response:
+                secret = json.loads(response.read(MAX_REQUEST)).get("value")
+        except urllib.error.HTTPError as error:
+            if error.code in (401, 403):
+                self.voice_key = None  # a replaced key is read again at the next try
+                raise Refused(502, "The voice provider refused the key.") from None
+            raise Refused(502, "The voice provider answered with an error (%d)." % error.code) from None
+        except (OSError, ValueError, AttributeError):
+            raise Refused(502, "The voice provider could not be reached.") from None
+        if not isinstance(secret, str) or not secret:
+            raise Refused(502, "The voice provider sent no session key.")
+        path = urllib.parse.urlsplit(self.options.voice_url).path
+        return {"secret": secret, "model": VOICE_MODEL,
+                "url": "%s%s/realtime?model=%s" % (self.voice_socket, path, VOICE_MODEL)}
 
     def route_threads(self, query, body):
         threads = self.threads.listing()
@@ -720,6 +778,7 @@ ROUTES = {
     ("POST", "/api/threads"): App.route_new_thread,
     ("POST", "/api/send"): App.route_send,
     ("GET", "/api/feed"): App.route_feed,
+    ("POST", "/api/voice/session"): App.route_voice_session,
     ("GET", "/api/history"): App.route_history,
     ("GET", "/api/conversations"): App.route_conversations,
     ("GET", "/api/schedules"): App.route_schedules,
@@ -794,7 +853,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not app.host_allowed(host):
             return self.reply(403, {"error": "This server answers only to its own address."})
         origin = self.headers.get("Origin")
-        if method != "GET" and origin is not None and origin.lower() != "http://" + host.lower():
+        own = ("https://" if host.lower() in app.remote else "http://") + host.lower()
+        if method != "GET" and origin is not None and origin.lower() != own:
             return self.reply(403, {"error": "Requests from other sites are refused."})
         if method == "GET" and url.path == "/":
             return self.page()
@@ -882,6 +942,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "login-url file on this Mac.</p>").encode("utf-8")
             return self.respond(403, "text/html; charset=utf-8", body)
         cookie = "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d" % (app.cookie, app.session, 400 * 86400)
+        if (self.headers.get("Host") or "").lower() in app.remote:
+            cookie += "; Secure"
         self.respond(303, "text/plain; charset=utf-8", b"Signed in.\n", [("Location", "/"), ("Set-Cookie", cookie)])
 
 
@@ -981,6 +1043,10 @@ def main():
     parser.add_argument("--bind", default="127.0.0.1", help="IPv4 address to listen on")
     parser.add_argument("--source", help="OPPA source checkout (reported in the session)")
     parser.add_argument("--channel", default="web", help="this channel's id in [[channels]]")
+    parser.add_argument("--host", action="append", default=[],
+                        help="one more name this server answers to over HTTPS, as a local proxy presents it")
+    parser.add_argument("--voice-key", help="a command that prints the voice provider's API key; turns voice on")
+    parser.add_argument("--voice-url", default="https://api.boson.ai/v1", help="the voice provider's API address")
     options = parser.parse_args()
     if not options.oppa:
         parser.error("--oppa is required when serve does not start the adapter")
@@ -992,6 +1058,11 @@ def main():
         parser.error("--port must be between 0 and 65535")
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", options.channel):
         parser.error("--channel must be the [[channels]] id")
+    if any(not re.fullmatch(r"[A-Za-z0-9.-]{1,253}(?::[0-9]{1,5})?", name) for name in options.host):
+        parser.error("--host takes a host name, with a port when it is not 443")
+    if urllib.parse.urlsplit(options.voice_url).scheme not in ("http", "https"):
+        parser.error("--voice-url takes an http or https address")
+    options.voice_url = options.voice_url.rstrip("/")
     if options.source:
         options.source = os.path.abspath(options.source)
     app = App(options)

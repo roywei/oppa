@@ -4,6 +4,17 @@
 
 First public release.
 
+- Voice on the web page, in two modes, off until the web channel's command names a key with `--voice-key`.
+  Hold the microphone to say one message: what was heard is sent as typed, so the assistant gets the exact
+  words. The live button keeps a full-duplex conversation open with a fast voice model (Boson Higgs Realtime)
+  that answers small talk and hands everything else to the assistant. Replies are spoken in short form and
+  shown in full. The page connects to the provider with a ten-minute key, so the provider's key stays on the
+  Mac and audio does not pass through OPPA. `--host` lets a local HTTPS proxy such as `tailscale serve`
+  present the page to a phone. Measured from this Mac on 2026-11-12 with synthetic speech: words heard in
+  about 0.5 s, the hand-off in 0.6 s, first spoken audio in about 1 s. Not yet done: the microphone and
+  playback code has been checked for syntax only and needs a first real try in a browser; a spoken message
+  carries no `spoken` mark in the log (V-1); live small talk is not logged.
+
 - Slack replies are sent as Markdown that Slack renders: tables, code blocks with their language, lists and
   links, where a reply used to be rewritten into Slack's older markup and showed tables and code as plain text.
   A long reply still goes in parts of at most 3,900 characters, and a code block cut between two parts is now

@@ -337,6 +337,11 @@ struct Standalone {
 
 impl Standalone {
     fn start(cli: Cli) -> Self {
+        Self::start_with(cli, &[])
+    }
+
+    /// The same, with more arguments on the adapter's command line.
+    fn start_with(cli: Cli, more: &[&str]) -> Self {
         let root = tempfile::tempdir().unwrap();
         let paths = instance(root.path(), cli);
         let config = paths.load().unwrap();
@@ -344,6 +349,7 @@ impl Standalone {
         let mut command = Command::new(&argv[0]);
         command
             .args(&argv[1..])
+            .args(more)
             .current_dir(root.path())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -917,6 +923,122 @@ impl Drop for Serving {
 // adapter wrote, a typed message is answered on the page, and the page reads
 // the conversation back by running the `oppa` serve handed it, since the
 // configuration names none.
+/// A synthetic voice provider on loopback. It answers the request for a
+/// session key and records the path and the key it was asked with.
+const VOICE_PROVIDER: &str = r#"
+import http.server, json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *args): pass
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get('Content-Length') or 0))
+        (root / 'asked.json').write_text(json.dumps({'path': self.path, 'authorization': self.headers.get('Authorization')}))
+        data = json.dumps({'value': 'eph-synthetic-0001'}).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+server = http.server.HTTPServer(('127.0.0.1', 0), Handler)
+(root / 'port.tmp').write_text(str(server.server_address[1]))
+(root / 'port.tmp').rename(root / 'port')
+server.serve_forever()
+"#;
+
+struct Stopped(Child);
+
+impl Drop for Stopped {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// Voice is off until the owner names a key command. With one, the page gets
+/// a session key and the provider's address, never the provider's own key,
+/// and may connect to that provider and nowhere else. A name a local proxy
+/// gives the page is answered over HTTPS only.
+#[test]
+fn voice_gives_the_page_a_session_key_and_keeps_the_providers_key() {
+    let plain = Standalone::start(Cli::Stub);
+    let page = Page::sign_in(&plain.state());
+    assert_eq!(page.get("/api/session").json()["voice"], false);
+    assert_eq!(page.post("/api/voice/session", json!({})).status, 404);
+    drop(plain);
+
+    let provider = tempfile::tempdir().unwrap();
+    let _server = Stopped(
+        Command::new("python3")
+            .args(["-c", VOICE_PROVIDER])
+            .arg(provider.path())
+            .spawn()
+            .unwrap(),
+    );
+    let mut port = String::new();
+    until("the synthetic provider's port", || {
+        port = fs::read_to_string(provider.path().join("port")).unwrap_or_default();
+        !port.is_empty()
+    });
+    let adapter = Standalone::start_with(
+        Cli::Stub,
+        &[
+            "--voice-key",
+            "/bin/echo synthetic-provider-key",
+            "--voice-url",
+            &format!("http://127.0.0.1:{port}/v1"),
+            "--host",
+            "mac.synthetic.test",
+        ],
+    );
+    let page = Page::sign_in(&adapter.state());
+    assert_eq!(page.get("/api/session").json()["voice"], true);
+    let policy = page.get("/");
+    assert!(
+        policy
+            .header("content-security-policy")
+            .unwrap()
+            .contains(&format!("connect-src 'self' ws://127.0.0.1:{port};")),
+        "{:?}",
+        policy.header("content-security-policy")
+    );
+    let session = page.post("/api/voice/session", json!({}));
+    assert_eq!(session.status, 200, "{}", session.text());
+    assert_eq!(
+        session.json(),
+        json!({"secret": "eph-synthetic-0001", "model": "higgs-realtime",
+            "url": format!("ws://127.0.0.1:{port}/v1/realtime?model=higgs-realtime")})
+    );
+    assert!(!session.text().contains("synthetic-provider-key"));
+    let asked: Value =
+        serde_json::from_slice(&fs::read(provider.path().join("asked.json")).unwrap()).unwrap();
+    assert_eq!(
+        asked,
+        json!({"path": "/v1/realtime/client_secrets", "authorization": "Bearer synthetic-provider-key"})
+    );
+
+    let through_proxy = |origin: &str| {
+        let headers = [
+            ("Host", "mac.synthetic.test"),
+            ("Cookie", page.cookie.as_str()),
+            ("Origin", origin),
+            ("Content-Type", "application/json"),
+        ];
+        request(
+            page.port,
+            "POST",
+            "/api/threads",
+            &headers,
+            Some(&json!({})),
+        )
+        .status
+    };
+    assert_eq!(through_proxy("https://mac.synthetic.test"), 200);
+    assert_eq!(through_proxy("http://mac.synthetic.test"), 403);
+    assert!(fs::read_to_string(adapter.state().join("remote-login-url"))
+        .unwrap()
+        .starts_with("https://mac.synthetic.test/login?token="));
+}
+
 #[test]
 fn the_web_chat_init_writes_answers_through_serve_without_edits() {
     let root = tempfile::tempdir().unwrap();
