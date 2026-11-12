@@ -703,7 +703,12 @@ async fn serve_runs_watches_beside_turns_and_starts_a_turn_only_when_one_asks() 
         serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
     };
     assert_eq!(record("slow")["state"], "started", "it is still running");
-    assert_eq!(record("quiet")["state"], "quiet");
+    // The quiet watch's command ends on its own task, in its own time.
+    let deadline = Instant::now() + EVENTUALLY;
+    while record("quiet")["state"] != "quiet" {
+        assert!(Instant::now() < deadline, "the quiet watch never finished");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     fixture.wait_settled().await;
     settle().await;
     assert_eq!(
@@ -732,7 +737,7 @@ async fn serve_runs_watches_beside_turns_and_starts_a_turn_only_when_one_asks() 
         .trim()
         .parse()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + EVENTUALLY;
     while unsafe { libc::kill(pid, 0) } == 0 {
         assert!(Instant::now() < deadline, "the slow command still runs");
         tokio::time::sleep(Duration::from_millis(10)).await;

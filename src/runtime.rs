@@ -409,11 +409,12 @@ impl Runtime {
         self.fire_slot(schedule, slot, None, deliver).await
     }
 
-    /// Fire a watch's run that asked for a turn, or failed, as the turn a
+    /// Fire the turn a watch is owed at the run of `slot`, as the turn a
     /// schedule slot gets, with the body `Schedule::watch_run` returned. A
     /// run less than the watch's cooldown after the slot of its last turn
     /// fires nothing, so a watch that keeps asking starts one turn per
-    /// cooldown however long turns wait.
+    /// cooldown however long turns wait; the ask stays owed, and a later
+    /// run brings it again. Nor does a body whose ask a turn has answered.
     pub async fn fire_watch<D: Deliver>(
         &self,
         schedule: &Schedule,
@@ -456,7 +457,15 @@ impl Runtime {
             Some(_) => bail!("another event already holds this schedule slot's id"),
             None => {
                 let body = match body {
-                    Some(_) if self.cooling(schedule, &identity.id, slot)? => return Ok(None),
+                    Some(body)
+                        if self.cooling(schedule, &identity.id, slot)?
+                            || schedule.answered(&self.store)?.is_some_and(|answered| {
+                                serde_json::from_str::<serde_json::Value>(&body)
+                                    .is_ok_and(|body| body["slot"] == answered.as_str())
+                            }) =>
+                    {
+                        return Ok(None)
+                    }
                     Some(body) => body,
                     None => {
                         schedule

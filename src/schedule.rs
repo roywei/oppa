@@ -29,6 +29,10 @@ const RECORD_CHARS: usize = 1000;
 /// The failure a slot reports when its command started and left no result.
 const CUT_OFF: &str = "it started for this slot before and recorded no result, so it was not \
     run again; oppa may have stopped while it ran";
+/// How many asks a watch holds for its next turn; past it the oldest goes.
+/// The held ones are cut to `RECORD_CHARS` of output and of errors, so they
+/// and the newest's instruction fit in the part of an event a turn is shown.
+const MAX_OWED: usize = 5;
 /// A watch's quiet time after a turn when none is given.
 pub const DEFAULT_COOLDOWN: u32 = 30;
 
@@ -135,6 +139,7 @@ impl Schedule {
             schedule: id,
             slot: "2026-01-01T00:00:00+00:00".into(),
             prompt: &self.prompt,
+            held: Vec::new(),
             command: None,
         };
         ensure!(
@@ -233,61 +238,114 @@ impl Schedule {
             schedule: &self.id,
             slot: slot.to_rfc3339(),
             prompt: &self.prompt,
+            held: Vec::new(),
             command,
         })?)
     }
 
     /// Run a watch's command for `slot`, with no turn, and return the event
-    /// body its turn gets when the run asks for one or fails; None when it
-    /// was quiet. A run may take its interval at most, so runs never overlap.
-    /// Its record, `runs/watch-<id>.json`, holds the latest run and is written
-    /// before the command starts, so a slot runs once, even across a restart.
+    /// body its turn is owed; None when it is owed none. A run that asks for
+    /// a turn or fails is owed one until a turn answers it: `answered` is
+    /// `Schedule::answered`, and the body comes back on every run until that
+    /// names its slot, so an ask outlives a restart and the cooldown, and the
+    /// asks a turn has not seen arrive together as `held`. A run may take its
+    /// interval at most, so runs never overlap. Its record,
+    /// `runs/watch-<id>.json`, holds the latest run and the asks still owed.
+    /// It is written before the command starts, so a slot runs once, even
+    /// across a restart: a slot the record shows started and never finished
+    /// was cut off, and is owed a turn that says so.
     pub async fn watch_run(
         &self,
         slot: &DateTime<impl TimeZone>,
         runs: &Path,
+        answered: Option<&str>,
     ) -> Result<Option<String>> {
         let every = self.watch.as_ref().context("not a watch")?.every_minutes;
         let record = watch_record(runs, &self.id);
         let slot_text = slot.to_rfc3339();
-        let last: Option<Value> = std::fs::read(&record)
+        let last: Value = std::fs::read(&record)
             .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok());
-        if last.is_some_and(|last| last["slot"] == slot_text.as_str()) {
-            return Ok(None);
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default();
+        let mut owed: Vec<Ask> = serde_json::from_value(last["owed"].clone()).unwrap_or_default();
+        if let Some(seen) = owed.iter().position(|ask| Some(&*ask.slot) == answered) {
+            owed.drain(..=seen);
         }
-        let started_at = Utc::now().to_rfc3339();
-        atomic_json(
-            &record,
-            &json!({"schedule":self.id,"slot":slot_text,"state":"started","started_at":started_at}),
-        )?;
-        let timeout = self.timeout_seconds.min(u64::from(every) * 60);
-        let report = run_command(&self.command, timeout).await;
-        let stdout = report.stdout.as_deref().unwrap_or_default();
-        let state = match (report.ok, asks_for_turn(stdout)) {
-            (false, _) => "failed",
-            (true, true) => "triggered",
-            (true, false) => "quiet",
+        let ran = last["slot"] == slot_text.as_str();
+        if !ran || last["state"] == "started" {
+            let started_at = Utc::now().to_rfc3339();
+            let report = if ran {
+                CommandReport {
+                    argv: self.command.clone(),
+                    failure: Some(CUT_OFF.into()),
+                    ..Default::default()
+                }
+            } else {
+                atomic_json(
+                    &record,
+                    &json!({"schedule":self.id,"slot":slot_text,"state":"started","started_at":started_at,"owed":owed}),
+                )?;
+                let timeout = self.timeout_seconds.min(u64::from(every) * 60);
+                run_command(&self.command, timeout).await
+            };
+            let stdout = report.stdout.clone().unwrap_or_default();
+            let state = match (report.ok, asks_for_turn(&stdout)) {
+                (false, _) => "failed",
+                (true, true) => "triggered",
+                (true, false) => "quiet",
+            };
+            // The head of the output and the tail of the errors, as a turn gets them.
+            let stderr = report.stderr.clone().unwrap_or_default();
+            let skipped = stderr.chars().count().saturating_sub(RECORD_CHARS);
+            let (exit_status, failure) = (report.exit_status, report.failure.clone());
+            if state != "quiet" {
+                // An ask held behind a newer one keeps what the record keeps.
+                for held in &mut owed {
+                    if let Some(stdout) = &mut held.command.stdout {
+                        *stdout = stdout.chars().take(RECORD_CHARS).collect();
+                    }
+                    if let Some(stderr) = &mut held.command.stderr {
+                        let skipped = stderr.chars().count().saturating_sub(RECORD_CHARS);
+                        *stderr = stderr.chars().skip(skipped).collect();
+                    }
+                }
+                if owed.len() == MAX_OWED {
+                    owed.remove(0);
+                }
+                owed.push(Ask {
+                    slot: slot_text.clone(),
+                    command: report,
+                });
+            }
+            atomic_json(
+                &record,
+                &json!({"schedule":self.id,"slot":slot_text,"state":state,"started_at":started_at,
+                    "finished_at":Utc::now().to_rfc3339(),"exit_status":exit_status,
+                    "failure":failure,"stdout":stdout.chars().take(RECORD_CHARS).collect::<String>(),
+                    "stderr":stderr.chars().skip(skipped).collect::<String>(),"owed":owed}),
+            )?;
+        }
+        let Some(Ask { slot, command }) = owed.pop() else {
+            return Ok(None);
         };
-        // The head of the output and the tail of the errors, as a turn gets them.
-        let stderr = report.stderr.as_deref().unwrap_or_default();
-        let skipped = stderr.chars().count().saturating_sub(RECORD_CHARS);
-        atomic_json(
-            &record,
-            &json!({"schedule":self.id,"slot":slot_text,"state":state,"started_at":started_at,
-                "finished_at":Utc::now().to_rfc3339(),"exit_status":report.exit_status,
-                "failure":report.failure,"stdout":stdout.chars().take(RECORD_CHARS).collect::<String>(),
-                "stderr":stderr.chars().skip(skipped).collect::<String>()}),
-        )?;
-        if state == "quiet" {
-            return Ok(None);
-        }
         Ok(Some(serde_json::to_string(&EventBody {
             schedule: &self.id,
-            slot: slot_text,
+            slot,
             prompt: &self.prompt,
-            command: Some(report),
+            held: owed,
+            command: Some(command),
         })?))
+    }
+
+    /// The slot of this watch's last ask that a turn answered: the one in
+    /// the body of its last event.
+    pub fn answered(&self, store: &Store) -> Result<Option<String>> {
+        let conversation = self.destination(store)?.id;
+        let event = store.latest_inbound(&conversation, &format!("schedule:{}:", self.id))?;
+        Ok(event.and_then(|event| {
+            let body: Value = serde_json::from_str(&event.body).ok()?;
+            Some(body["slot"].as_str()?.to_owned())
+        }))
     }
 
     /// The slot owed at `now`: the latest configured time on an allowed day at
@@ -703,13 +761,23 @@ struct EventBody<'a> {
     schedule: &'a str,
     slot: String,
     prompt: &'a str,
+    /// A watch's earlier asks that no turn has seen, oldest first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    held: Vec<Ask>,
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<CommandReport>,
 }
 
+/// A watch run that asked for a turn or failed.
+#[derive(Serialize, Deserialize)]
+struct Ask {
+    slot: String,
+    command: CommandReport,
+}
+
 /// What a slot's turn learns about its command: the outcome first, then the
 /// error tail, then the output, which is the longest and is clipped first.
-#[derive(Default, Serialize)]
+#[derive(Default, Serialize, Deserialize)]
 struct CommandReport {
     argv: Vec<String>,
     ok: bool,

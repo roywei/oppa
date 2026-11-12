@@ -732,7 +732,11 @@ async fn main() -> Result<()> {
             // A watch runs its command first and starts the turn only when it asks.
             if schedule.watch.is_some() {
                 let runs = runtime.paths.runtime.join("runs");
-                let Some(body) = schedule.watch_run(&slot, &runs).await? else {
+                let answered = schedule.answered(&runtime.store)?;
+                let Some(body) = schedule
+                    .watch_run(&slot, &runs, answered.as_deref())
+                    .await?
+                else {
                     eprintln!("watch {id} asked for no turn; oppa schedules shows its last run");
                     return Ok(());
                 };
@@ -741,7 +745,9 @@ async fn main() -> Result<()> {
                     .await?
                     .is_none()
                 {
-                    eprintln!("watch {id} asked for a turn within its cooldown; nothing ran");
+                    eprintln!(
+                        "watch {id} asked for a turn within its cooldown; it is held for a later run"
+                    );
                 }
                 return Ok(());
             }

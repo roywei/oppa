@@ -1570,7 +1570,11 @@ esac"#;
     let at = |minutes| opening + chrono::Duration::minutes(minutes);
     let run = async |says: &str, slot: chrono::DateTime<chrono::Local>| {
         fs::write(&mode, says).unwrap();
-        let body = watch.watch_run(&slot, &records).await.unwrap()?;
+        let answered = watch.answered(&runtime.store).unwrap();
+        let body = watch
+            .watch_run(&slot, &records, answered.as_deref())
+            .await
+            .unwrap()?;
         let turn = runtime
             .fire_watch(&watch, &slot, body, &mut ConsoleDelivery(|_: &str| Ok(())))
             .await
@@ -1587,8 +1591,9 @@ esac"#;
     assert_eq!(turns(), 0, "no model was called");
     assert_eq!(run("ask", at(2)).await, Some(true));
     assert_eq!(run("ask", at(4)).await, Some(false), "within the cooldown");
+    assert_eq!(run("quiet", at(6)).await, Some(false), "the ask is held");
     assert_eq!(run("fail", at(32)).await, Some(true), "a failure, after it");
-    assert_eq!(fs::read_to_string(&runs).unwrap().lines().count(), 4);
+    assert_eq!(fs::read_to_string(&runs).unwrap().lines().count(), 5);
     let requests = captured(dir.path(), "first");
     assert_eq!(requests.len(), 2);
     let asked = schedule_body(&requests[0]);
@@ -1603,7 +1608,16 @@ esac"#;
         .as_str()
         .unwrap()
         .contains(r#""why": "SPY -2.0% intraday""#));
-    let failed = &schedule_body(&requests[1])["command"];
+    // The ask the cooldown held reaches the next turn, ahead of the newest.
+    let body = schedule_body(&requests[1]);
+    let held = body["held"].as_array().unwrap();
+    assert_eq!(held.len(), 1);
+    assert_eq!(held[0]["slot"], at(4).to_rfc3339());
+    assert!(held[0]["command"]["stdout"]
+        .as_str()
+        .unwrap()
+        .contains("SPY 701.18 to 686.90"));
+    let failed = &body["command"];
     assert_eq!(
         (&failed["ok"], &failed["failure"], &failed["stderr"]),
         (
@@ -1636,6 +1650,35 @@ esac"#;
         .fire_schedule(&watch, &at(34), &mut ConsoleDelivery(|_: &str| Ok(())))
         .await
         .is_err());
+    // Answered asks are owed nothing more.
+    assert_eq!(run("quiet", at(34)).await, None);
+    // An ask whose turn never started, as when oppa stops first, is still
+    // owed: the same slot brings it again without running the command twice.
+    fs::write(&mode, "ask").unwrap();
+    let answered = watch.answered(&runtime.store).unwrap();
+    let lost = watch
+        .watch_run(&at(70), &records, answered.as_deref())
+        .await
+        .unwrap();
+    assert!(lost.is_some());
+    assert_eq!(run("ask", at(70)).await, Some(true), "after a restart");
+    assert_eq!(fs::read_to_string(&runs).unwrap().lines().count(), 7);
+    assert_eq!(
+        schedule_body(&captured(dir.path(), "first")[2])["slot"],
+        at(70).to_rfc3339()
+    );
+    // A slot that started and recorded no result was cut off: it is not run
+    // again, and its turn says so.
+    let record = records.join("watch-spy.json");
+    let cut = serde_json::json!({"schedule":"spy","slot":at(110).to_rfc3339(),"state":"started"});
+    fs::write(&record, cut.to_string()).unwrap();
+    assert_eq!(run("ask", at(110)).await, Some(true), "a cut-off run");
+    assert_eq!(fs::read_to_string(&runs).unwrap().lines().count(), 7);
+    let cut = schedule_body(&captured(dir.path(), "first")[3]);
+    assert!(cut["command"]["failure"]
+        .as_str()
+        .unwrap()
+        .contains("recorded no result"));
 }
 
 #[tokio::test]

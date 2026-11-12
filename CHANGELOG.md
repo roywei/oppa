@@ -15,7 +15,10 @@ First public release.
   `watch` (`every_minutes` 1 to 60, `until`, `cooldown_minutes` 5 to 1440, 30 by default) runs its command every
   few minutes from `at` until `until` on its days. Serve runs it on a task of its own, so no turn waits for it,
   one run at a time, and starts the schedule's turn only when the command prints a line `{"trigger": true}` or
-  fails; after a turn none starts for the cooldown. `runs/watch-<id>.json` keeps the latest run, which
+  fails; after a turn none starts for the cooldown. An ask is owed a turn until one answers it: one made in the
+  cooldown is held and reaches the next turn under `held` (five at most, the oldest dropped), one whose turn had
+  not started when oppa stopped fires after the restart, and a run cut off mid-command reports that instead of
+  staying silent. `runs/watch-<id>.json` keeps the latest run and the asks still owed, which
   `oppa schedules` shows as `last_run`. `oppa schedules add` takes `--every`, `--until` and `--cooldown`; at
   `computer` access `schedules.create` takes `watch` and `command`. The policy hash changes (the manual and the
   schedule tools), so sessions start afresh after an install. An earlier build cannot read a stored watch:

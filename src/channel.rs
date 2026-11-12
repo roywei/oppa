@@ -955,9 +955,9 @@ impl Server {
                             continue;
                         }
                         // A watch's command runs on a task of its own, so no turn
-                        // waits for it; only a run that asks for a turn, or
-                        // fails, goes to the worker. One run at a time, each
-                        // slot once.
+                        // waits for it; only a run owed a turn, for an ask or
+                        // a failure of its own or one held from before, goes
+                        // to the worker. One run at a time, each slot once.
                         if schedule.watch.is_some() {
                             if watching.get(&schedule.id).is_some_and(|(ran, run)| *ran == slot || !run.is_finished()) {
                                 continue;
@@ -967,8 +967,16 @@ impl Server {
                             });
                             let (jobs, config, runs) = (worker.jobs.clone(), live.clone(), self.paths.runtime.join("runs"));
                             let id = schedule.id.clone();
+                            // The ask its last turn answered; the rest are still owed one.
+                            let answered = match Store::open(&self.paths.database()).and_then(|store| schedule.answered(&store)) {
+                                Ok(answered) => answered,
+                                Err(error) => {
+                                    report.error(&schedule.conversation, format!("watch {id}: {error}"));
+                                    continue;
+                                }
+                            };
                             let run = tokio::spawn(async move {
-                                match schedule.watch_run(&slot, &runs).await {
+                                match schedule.watch_run(&slot, &runs, answered.as_deref()).await {
                                     // A stopped worker stops serve on the next job serve sends it.
                                     Ok(Some(body)) => {
                                         let _ = jobs.send((config, Job::Watch { schedule, slot, body }));
