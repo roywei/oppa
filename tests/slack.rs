@@ -461,15 +461,16 @@ async fn the_owner_is_answered_in_line_in_a_direct_chat_and_in_the_thread_in_a_r
     // A reply too long for one Slack message goes in parts; their echoes are
     // that one reply, not more messages. A code block cut between two parts
     // is closed in the first and opened again, with its language, in the next.
+    // A room-wide mention in a reply is made inert with a zero-width space.
     let (a, b) = ("a".repeat(3000), "b".repeat(3000));
-    let long = format!("intro\n```sh\n{a}\n{b}\n```");
+    let long = format!("intro @here\n```sh\n{a}\n{b}\n```");
     fixture.arrive(6, message("D_OWNER", "1790000006.000100", "U_OWNER", &long));
     fixture.until("both parts", |f| sent(f).len() == 5).await;
     tokio::time::sleep(Duration::from_millis(1500)).await;
     let posts = sent(&fixture);
     assert_eq!(
         posts[3]["args"]["markdown_text"],
-        format!("Reply to: intro\n```sh\n{a}\n```")
+        format!("Reply to: intro @\u{200b}here\n```sh\n{a}\n```")
     );
     assert_eq!(
         posts[4]["args"]["markdown_text"],
