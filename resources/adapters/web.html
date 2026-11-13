@@ -804,10 +804,11 @@ const VOICE_BRIEF = 'You are the voice of the owner\'s personal assistant, talki
   'request: tell the owner that answer in one or two short spoken sentences, without lists, and say the rest is on ' +
   'screen when you leave something out. Never make up a result.';
 const VOICE_RATES = [8000, 16000, 24000, 48000];
+const VOICE_SILENT = 'The microphone gives no sound. Choose another input in System Settings, Sound: a Mac with its lid closed turns the built-in microphone off.';
 
 const voice = {
   ws: null, ctx: null, stream: null, node: null, mode: null, thread: null, generation: 0, ready: false,
-  held: false, capturing: false, commitDue: false, frames: [], sent: 0, busy: false, owed: false, telling: false,
+  held: false, capturing: false, commitDue: false, frames: [], sent: 0, peak: 0, waiting: 0, busy: false, owed: false, telling: false,
   mute: false, results: [], heard: '',
   sources: new Set(), playAt: 0, carry: null, hold: null, live: null, status: h('div', {class: 'voice-status', role: 'status'}),
 };
@@ -869,7 +870,8 @@ function voiceClose(note) {
   voice.generation++;
   voice.ready = voice.capturing = voice.held = voice.commitDue = voice.busy = voice.owed = voice.telling = voice.mute = false;
   voice.frames = [];
-  voice.sent = 0;
+  voice.sent = voice.peak = 0;
+  clearTimeout(voice.waiting);
   voice.results = [];
   voice.heard = '';
   voiceHush();
@@ -907,9 +909,14 @@ async function voiceOpen(mode) {
       if (!voice.capturing) return;
       const input = event.inputBuffer.getChannelData(0);
       const pcm = new Int16Array(input.length);
-      for (let i = 0; i < input.length; i++) pcm[i] = Math.max(-32768, Math.min(32767, Math.round(input[i] * 32767)));
+      for (let i = 0; i < input.length; i++) {
+        pcm[i] = Math.max(-32768, Math.min(32767, Math.round(input[i] * 32767)));
+        if (pcm[i] > voice.peak || -pcm[i] > voice.peak) voice.peak = Math.abs(pcm[i]);
+      }
       const frame = voiceBase64(new Uint8Array(pcm.buffer));
       voice.sent++;
+      // A live line that has heard nothing at all for three seconds has a dead microphone.
+      if (voice.mode === 'live' && voice.sent === 36 && voice.peak < 4) voiceSay(VOICE_SILENT);
       if (voice.ready) voiceSend({type: 'input_audio_buffer.append', audio: frame});
       else if (voice.frames.length < 600) voice.frames.push(frame);
     };
@@ -961,9 +968,11 @@ function voiceEvent(event) {
     voice.mute = true;
     voice.heard = '';
   } else if (type === 'conversation.item.input_audio_transcription.completed') {
-    const text = (event.transcript || '').trim();
+    // The provider writes silence and noise as dots: words have a letter or a digit.
+    const text = /[\p{L}\p{N}]/u.test(event.transcript || '') ? event.transcript.trim() : '';
     if (voice.mode === 'live') { voice.heard = text; return; }
-    if (text) { voiceSay(''); voiceSubmit(text); } else voiceSay('Nothing was heard.');
+    clearTimeout(voice.waiting);
+    if (text) { voiceSay(''); voiceSubmit(text); } else voiceSay('No words were heard.');
   } else if (type === 'response.created') {
     voice.busy = true;
     voice.mute = false;
@@ -989,6 +998,7 @@ function voiceEvent(event) {
   } else if (type === 'error') {
     const message = (event.error && event.error.message) || 'The voice provider reported an error.';
     if (/ongoing/i.test(message)) { voice.owed = true; return; }
+    clearTimeout(voice.waiting);
     voice.busy = false;
     voiceSay(message);
   } else if (type === 'session.idle_timeout' || type === 'session.max_duration_reached') {
@@ -1028,8 +1038,11 @@ function voiceFlush() {
 }
 
 function voiceCommit() {
-  if (voice.sent) voiceSend({type: 'input_audio_buffer.commit'});
-  else voiceSay('Nothing was recorded. Hold the button while you speak.');
+  if (!voice.sent) return voiceSay('Nothing was recorded. Hold the button while you speak.');
+  if (voice.peak < 4) return voiceSay(VOICE_SILENT);
+  voiceSend({type: 'input_audio_buffer.commit'});
+  clearTimeout(voice.waiting);
+  voice.waiting = setTimeout(() => voiceSay('The voice provider did not answer. Try again.'), 8000);
 }
 
 async function voicePress(event) {
@@ -1042,7 +1055,7 @@ async function voicePress(event) {
   if (!voice.mode) return;
   voice.held = voice.capturing = true;
   voice.mute = true;       // a reply still being spoken stops here
-  voice.sent = 0;
+  voice.sent = voice.peak = 0;
   voice.hold.classList.add('on');
   voiceSay('Listening. Release to send.');
   if (voice.busy) voiceSend({type: 'response.cancel'});
@@ -1057,9 +1070,11 @@ function voiceRelease() {
   if (voice.mode !== 'turn') return;
   voice.capturing = false;
   if (voice.ctx) voice.ctx.resume().catch(() => {});   // a phone counts the release, not the press, as the tap
-  voiceSay('Heard. Sending.');
-  if (voice.ready) voiceCommit();
-  else voice.commitDue = true;
+  voiceSay('Sending.');
+  if (voice.ready) return voiceCommit();
+  voice.commitDue = true;
+  clearTimeout(voice.waiting);
+  voice.waiting = setTimeout(() => voiceSay('The voice session did not open. Check the microphone permission and try again.'), 10000);
 }
 
 async function voiceToggleLive() {

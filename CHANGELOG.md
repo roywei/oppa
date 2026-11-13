@@ -4,6 +4,10 @@
 
 First public release.
 
+- Voice on the web page says when the microphone is silent, as a Mac's built-in microphone is with the lid
+  closed, where it used to send nothing or a message of dots. A recording with no words is not sent, and a
+  hold that gets no answer within ten seconds says so. Found on the first real try, 2026-11-13.
+
 - Voice on the web page, in two modes, off until the web channel's command names a key with `--voice-key`.
   Hold the microphone to say one message: what was heard is sent as typed, so the assistant gets the exact
   words. The live button keeps a full-duplex conversation open with a fast voice model (Boson Higgs Realtime)
