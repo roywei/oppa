@@ -6,10 +6,6 @@ First public release.
 
 - Voice on the web page records from the input chosen in the system's sound settings. Chrome, asked for
   no microphone in particular, took the built-in one while Bluetooth earbuds were the system's input.
-- Voice on the web page moves to another microphone when the one in use gives no sound: it tries each
-  input the browser lists, keeps the first that gives any sound until the page is reloaded, and names it.
-  Found on 2026-11-14, when Bluetooth earbuds dropped off and the Mac went back to its switched-off
-  built-in microphone while a USB one worked. Checked in Chrome on that Mac; no fixture test covers it.
 - Voice on the web page says when the microphone is silent, as a Mac's built-in microphone is with the lid
   closed, where it used to send nothing or a message of dots. A recording with no words is not sent, and a
   hold that gets no answer within ten seconds says so. Found on the first real try, 2026-11-13.
