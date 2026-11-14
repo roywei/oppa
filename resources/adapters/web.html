@@ -804,12 +804,12 @@ const VOICE_BRIEF = 'You are the voice of the owner\'s personal assistant, talki
   'request: tell the owner that answer in one or two short spoken sentences, without lists, and say the rest is on ' +
   'screen when you leave something out. Never make up a result.';
 const VOICE_RATES = [8000, 16000, 24000, 48000];
-const VOICE_SILENT = 'The microphone gives no sound. Choose another input in System Settings, Sound: a Mac with its lid closed turns the built-in microphone off.';
+const VOICE_SILENT = 'No microphone gives any sound. Connect one, or choose another input in System Settings, Sound: a Mac with its lid closed turns the built-in microphone off.';
 
 const voice = {
   ws: null, ctx: null, stream: null, node: null, mode: null, thread: null, generation: 0, ready: false,
   held: false, capturing: false, commitDue: false, frames: [], sent: 0, peak: 0, waiting: 0, busy: false, owed: false, telling: false,
-  mute: false, results: [], heard: '',
+  mute: false, results: [], heard: '', device: '', probing: false,
   sources: new Set(), playAt: 0, carry: null, hold: null, live: null, status: h('div', {class: 'voice-status', role: 'status'}),
 };
 
@@ -885,6 +885,64 @@ function voiceClose(note) {
   voiceSay(note || '');
 }
 
+// The browser's own microphone, or the one found after that one gave no sound.
+async function voiceMicrophone() {
+  const audio = {channelCount: 1, echoCancellation: true, noiseSuppression: true};
+  if (voice.device) {
+    try { return await navigator.mediaDevices.getUserMedia({audio: {...audio, deviceId: {exact: voice.device}}}); }
+    catch (_) { voice.device = ''; }    // unplugged since: back to the browser's own
+  }
+  return navigator.mediaDevices.getUserMedia({audio});
+}
+
+// True when the microphone gives any sound within a little over half a second. A working microphone is
+// never exactly silent; one that is switched off, or a virtual one nobody feeds, gives only zeros.
+async function voiceSounds(deviceId) {
+  let stream = null, ctx = null;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({audio: {deviceId: {exact: deviceId}}});
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    await ctx.resume();
+    const meter = ctx.createAnalyser();
+    ctx.createMediaStreamSource(stream).connect(meter);
+    const samples = new Float32Array(meter.fftSize);
+    for (let tries = 0; tries < 13; tries++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      meter.getFloatTimeDomainData(samples);
+      if (samples.some(sample => sample > 4 / 32767 || sample < -4 / 32767)) return true;
+    }
+    return false;
+  } catch (_) {
+    return false;
+  } finally {
+    if (stream) for (const track of stream.getTracks()) track.stop();
+    if (ctx) ctx.close().catch(() => {});
+  }
+}
+
+// The microphone in use gave no sound: try the others, keep the first that gives some, and say which.
+async function voiceOtherMicrophone() {
+  if (voice.probing) return;
+  const live = voice.mode === 'live';
+  const silent = voice.device;
+  voiceClose('The microphone gives no sound. Looking for another.');
+  voice.probing = true;
+  let found = null;
+  try {
+    const inputs = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput' &&
+      device.deviceId && !['default', 'communications', silent].includes(device.deviceId));
+    for (const input of inputs) {
+      if (await voiceSounds(input.deviceId)) { found = input; break; }
+    }
+  } catch (_) { /* no list of microphones: say none works */ }
+  voice.probing = false;
+  if (!found) { voice.device = ''; return voiceSay(VOICE_SILENT); }
+  voice.device = found.deviceId;
+  const name = (found.label || 'another microphone').replace(/\s*\([^)]*\)\s*$/, '');
+  if (live) { await voiceToggleLive(); if (voice.mode === 'live') voiceSay('Live on ' + name + '. Tap again to end.'); }
+  else voiceSay('Now using ' + name + '. Hold to talk again.');
+}
+
 // Opens the microphone and the provider session for one mode. Called from a
 // tap, which a phone browser requires before it lets a page record or play.
 async function voiceOpen(mode) {
@@ -899,7 +957,7 @@ async function voiceOpen(mode) {
     if (!VOICE_RATES.includes(voice.ctx.sampleRate)) throw new Error('This browser cannot record at a rate the voice provider takes.');
     const granted = api('/api/voice/session', {method: 'POST', body: {}});
     granted.catch(() => {});
-    const stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}});
+    const stream = await voiceMicrophone();
     if (generation !== voice.generation) { for (const track of stream.getTracks()) track.stop(); return false; }
     voice.stream = stream;
     // Recording starts as soon as the microphone opens; frames wait for the session.
@@ -916,7 +974,7 @@ async function voiceOpen(mode) {
       const frame = voiceBase64(new Uint8Array(pcm.buffer));
       voice.sent++;
       // A live line that has heard nothing at all for three seconds has a dead microphone.
-      if (voice.mode === 'live' && voice.sent === 36 && voice.peak < 4) voiceSay(VOICE_SILENT);
+      if (voice.mode === 'live' && voice.sent === 36 && voice.peak < 4) voiceOtherMicrophone();
       if (voice.ready) voiceSend({type: 'input_audio_buffer.append', audio: frame});
       else if (voice.frames.length < 600) voice.frames.push(frame);
     };
@@ -1039,7 +1097,7 @@ function voiceFlush() {
 
 function voiceCommit() {
   if (!voice.sent) return voiceSay('Nothing was recorded. Hold the button while you speak.');
-  if (voice.peak < 4) return voiceSay(VOICE_SILENT);
+  if (voice.peak < 4) return voiceOtherMicrophone();
   voiceSend({type: 'input_audio_buffer.commit'});
   clearTimeout(voice.waiting);
   voice.waiting = setTimeout(() => voiceSay('The voice provider did not answer. Try again.'), 8000);
@@ -1047,7 +1105,7 @@ function voiceCommit() {
 
 async function voicePress(event) {
   event.preventDefault();
-  if (voice.held) return;
+  if (voice.held || voice.probing) return;
   try { event.currentTarget.setPointerCapture(event.pointerId); } catch (_) { /* not a pointer that can be held */ }
   voiceHush();
   // Opening resets the session state, so the hold is marked after it starts.
@@ -1078,6 +1136,7 @@ function voiceRelease() {
 }
 
 async function voiceToggleLive() {
+  if (voice.probing) return;
   if (voice.mode === 'live') return voiceClose();
   voiceSay('Connecting.');
   if (!await voiceOpen('live')) return;
