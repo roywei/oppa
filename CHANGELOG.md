@@ -4,6 +4,8 @@
 
 First public release.
 
+- Voice on the web page records from the input chosen in the system's sound settings. Chrome, asked for
+  no microphone in particular, took the built-in one while Bluetooth earbuds were the system's input.
 - Voice on the web page moves to another microphone when the one in use gives no sound: it tries each
   input the browser lists, keeps the first that gives any sound until the page is reloaded, and names it.
   Found on 2026-11-14, when Bluetooth earbuds dropped off and the Mac went back to its switched-off

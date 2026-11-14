@@ -885,12 +885,14 @@ function voiceClose(note) {
   voiceSay(note || '');
 }
 
-// The browser's own microphone, or the one found after that one gave no sound.
+// The microphone found after another gave no sound, else the system's chosen input, else the browser's
+// own pick. Chrome names the system's input "default"; asked for none, it may take a different one.
 async function voiceMicrophone() {
   const audio = {channelCount: 1, echoCancellation: true, noiseSuppression: true};
-  if (voice.device) {
-    try { return await navigator.mediaDevices.getUserMedia({audio: {...audio, deviceId: {exact: voice.device}}}); }
-    catch (_) { voice.device = ''; }    // unplugged since: back to the browser's own
+  for (const deviceId of [voice.device, 'default']) {
+    if (!deviceId) continue;
+    try { return await navigator.mediaDevices.getUserMedia({audio: {...audio, deviceId: {exact: deviceId}}}); }
+    catch (_) { voice.device = ''; }    // unplugged since, or a browser with no such name
   }
   return navigator.mediaDevices.getUserMedia({audio});
 }
