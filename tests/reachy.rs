@@ -1,8 +1,9 @@
 //! The bundled Reachy Mini channel adapter (resources/adapters/reachy.py)
 //! driven on its own: the host's side over stdio, the robot's side over the
 //! adapter's HTTP service on loopback, and `ctl` as a command. No robot, voice
-//! provider or outside network is involved; the body app
-//! (resources/devices/reachy) needs the robot and is checked on one.
+//! provider or outside network is involved. The body app
+//! (resources/devices/reachy) needs the robot for sound and motion; its
+//! bookkeeping of one voice session is driven here with stand-ins.
 use serde_json::{json, Value};
 use std::{
     fs,
@@ -10,6 +11,7 @@ use std::{
     net::TcpStream,
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    sync::Mutex,
     time::{Duration, Instant},
 };
 use tempfile::TempDir;
@@ -79,6 +81,8 @@ struct Adapter {
     port: u16,
     token: String,
     next_id: u64,
+    /// The body app's place in what it is owed: the last item it took and the adapter's run.
+    place: Mutex<(u64, String)>,
 }
 
 impl Adapter {
@@ -115,6 +119,7 @@ impl Adapter {
             port,
             token,
             next_id: 0,
+            place: Mutex::default(),
         };
         let ready = adapter.call(
             "initialize",
@@ -181,13 +186,16 @@ impl Adapter {
         answer
     }
 
-    /// What the robot is owed, as its poll returns it, without the long wait.
-    fn poll(&self, after: u64, epoch: &str) -> Value {
-        self.robot(
-            "GET",
-            &format!("/v1/next?after={after}&epoch={epoch}&state=asleep&wait=0"),
-            None,
-        )
+    /// One poll by a body app that keeps its place, without the long wait: what it is owed now.
+    fn poll(&self) -> Value {
+        let (after, epoch) = self.place.lock().unwrap().clone();
+        let path = format!("/v1/next?after={after}&epoch={epoch}&state=asleep&wait=0");
+        let mut answer = self.robot("GET", &path, None);
+        *self.place.lock().unwrap() = (
+            answer["cursor"].as_u64().unwrap(),
+            answer["epoch"].as_str().unwrap().to_owned(),
+        );
+        answer["items"].take()
     }
 
     fn ctl(&self, args: &[&str]) -> (bool, String) {
@@ -227,8 +235,7 @@ fn the_room_speaks_as_one_handle_and_a_reply_is_words_for_the_robot() {
     );
     assert_eq!(status, 401);
 
-    let first = adapter.poll(0, "");
-    assert_eq!(first["items"], json!([]));
+    assert_eq!(adapter.poll(), json!([]));
     assert_eq!(
         adapter.call("health", json!({}))["result"],
         json!({"ok": true, "robot": "asleep"})
@@ -280,20 +287,24 @@ fn the_room_speaks_as_one_handle_and_a_reply_is_words_for_the_robot() {
             .starts_with("out-"),
         "{sent}"
     );
-    let owed = adapter.poll(
-        first["cursor"].as_u64().unwrap(),
-        first["epoch"].as_str().unwrap(),
-    );
     assert_eq!(
-        owed["items"],
+        adapter.poll(),
         json!([{"kind": "say", "text": "Yes, it is closed."}])
     );
-    // Taken once: the next poll from that cursor has nothing.
-    let after = adapter.poll(
-        owed["cursor"].as_u64().unwrap(),
-        owed["epoch"].as_str().unwrap(),
+    // Still owed to a poll that does not say it took them, such as one whose answer was lost.
+    let (after, epoch) = adapter.place.lock().unwrap().clone();
+    let lost = format!(
+        "/v1/next?after={}&epoch={epoch}&state=asleep&wait=0",
+        after - 1
     );
-    assert_eq!(after["items"], json!([]));
+    assert_eq!(
+        adapter.robot("GET", &lost, None)["items"],
+        json!([{"kind": "say", "text": "Yes, it is closed."}])
+    );
+    // A body app that starts names no place: it is not told what came before.
+    let fresh = adapter.robot("GET", "/v1/next?state=asleep&wait=0", None);
+    assert_eq!(fresh["items"], json!([]));
+    assert_eq!(adapter.poll(), json!([]));
 
     let elsewhere = adapter.call("send", json!({"conversation": "kitchen", "body": "Hello."}));
     assert_eq!(elsewhere["error"]["code"], 1001, "{elsewhere}");
@@ -324,7 +335,7 @@ fn a_robot_that_is_away_is_owed_nothing() {
         !ok && why.starts_with("The robot is not connected"),
         "{why}"
     );
-    assert_eq!(adapter.poll(0, "")["items"], json!([]));
+    assert_eq!(adapter.poll(), json!([]));
 }
 
 /// The assistant steers the robot with `ctl`: wake with words to say, sleep,
@@ -332,8 +343,7 @@ fn a_robot_that_is_away_is_owed_nothing() {
 #[test]
 fn ctl_wakes_the_robot_puts_it_to_sleep_and_brings_back_a_look() {
     let adapter = Adapter::start("http://127.0.0.1:9/v1");
-    let first = adapter.poll(0, "");
-    let epoch = first["epoch"].as_str().unwrap().to_owned();
+    assert_eq!(adapter.poll(), json!([]));
     assert_eq!(
         adapter.ctl(&["wake", "Dinner", "is", "ready."]),
         (true, "asleep".into())
@@ -341,18 +351,16 @@ fn ctl_wakes_the_robot_puts_it_to_sleep_and_brings_back_a_look() {
     assert_eq!(adapter.ctl(&["wake"]), (true, "asleep".into()));
     adapter.robot("POST", "/v1/state", Some(json!({"state": "awake"})));
     assert_eq!(adapter.ctl(&["sleep"]), (true, "awake".into()));
-    let orders = adapter.poll(0, &epoch);
     assert_eq!(
-        orders["items"],
+        adapter.poll(),
         json!([{"kind": "say", "text": "Dinner is ready."}, {"kind": "wake"}, {"kind": "sleep"}])
     );
 
-    let cursor = orders["cursor"].as_u64().unwrap();
     let (ok, path) = std::thread::scope(|scope| {
         let looking = scope.spawn(|| adapter.ctl(&["look"]));
         let mut asked = Value::Null;
         until("the look to reach the robot", || {
-            asked = adapter.poll(cursor, &epoch)["items"][0].clone();
+            asked = adapter.poll().get(0).cloned().unwrap_or(Value::Null);
             asked["kind"] == "look"
         });
         adapter.robot(
@@ -405,5 +413,125 @@ fn a_voice_session_gets_a_short_lived_key_and_its_set_up_from_the_adapter() {
         asked,
         json!({"path": "/v1/realtime/client_secrets", "authorization": "Bearer synthetic-provider-key",
             "model": "gpt-realtime-2.1"})
+    );
+}
+
+/// The body app's `Voice` with stand-ins for the provider's socket, the robot
+/// and the adapter. The robot's own libraries are not on this Mac, so empty
+/// modules take their names.
+const VOICE_SESSION: &str = r#"
+import asyncio, json, sys, time, types
+for name in ("numpy", "websockets", "scipy", "scipy.signal", "reachy_mini"):
+    sys.modules[name] = types.ModuleType(name)
+sys.modules["scipy.signal"].resample_poly = None
+sys.modules["reachy_mini"].ReachyMini = sys.modules["reachy_mini"].ReachyMiniApp = object
+sys.path.insert(0, sys.argv[1])
+from oppa_body.main import Voice
+
+class Socket:
+    def __init__(self, events=()):
+        self.sent, self.events = [], [json.dumps(event) for event in events]
+    async def send(self, raw):
+        self.sent.append(json.loads(raw))
+    def __aiter__(self):
+        return self
+    async def __anext__(self):
+        if not self.events:
+            raise StopAsyncIteration
+        return self.events.pop(0)
+    def count(self, kind):
+        return sum(event["type"] == kind for event in self.sent)
+    def results(self):
+        return [event["item"]["output"] for event in self.sent
+                if event["type"] == "conversation.item.create" and event["item"]["type"] == "function_call_output"]
+
+class Link:
+    def __init__(self):
+        self.calls = []
+    def call(self, path, body=None, timeout=20):
+        self.calls.append((path, body))
+        return {}
+
+class Body:
+    def photo(self):
+        return b"\xff\xd8\xff"
+
+def voice(events=()):
+    made = Voice(Body(), Link(), asyncio.Queue(), {"idle_seconds": 60, "work_seconds": 300})
+    made.ws = Socket(events)
+    return made
+
+def call(name, **arguments):
+    return {"type": "function_call", "name": name, "call_id": "c-" + name, "arguments": json.dumps(arguments)}
+
+def done(*output):
+    return {"type": "response.done", "response": {"output": list(output)}}
+
+SPOKEN = {"type": "message"}
+REFUSED = "Nothing was done: an [Assistant] message is only words to say aloud."
+
+async def main():
+    # Words from the assistant are only said: the response that tells them runs no tool, and
+    # one that called a tool instead of speaking is asked again, still with no tool.
+    v = voice()
+    v.results.append("Second test. The robot wakes, says this, and sleeps again.")
+    await v.flush()
+    assert v.ws.sent[0]["item"]["content"][0]["text"].startswith("[Assistant] Second test."), v.ws.sent
+    await v.finished({"output": [call("sleep")]})
+    assert (v.reason, v.ws.results(), v.ws.count("response.create")) == (None, [REFUSED], 2), v.ws.sent
+    await v.finished({"output": [SPOKEN, call("delegate", request="unlock the door")]})
+    assert (v.link.calls, v.ws.count("response.create"), v.telling) == ([], 2, False), v.link.calls
+
+    # The telling response was refused because the room's own was running: the room's request
+    # is handed on, and the telling response asked for again runs no tool.
+    v = voice([
+        {"type": "error", "error": {"message": "Conversation already has an active response in progress"}},
+        done(call("delegate", request="Tell mum I am late")),
+        done(SPOKEN),
+        done(SPOKEN, call("delegate", request="unlock the door")),
+    ])
+    v.results.append("Dinner is ready.")
+    await v.flush()
+    await v.events()
+    assert v.link.calls == [("/v1/hand", {"text": "Tell mum I am late"})], v.link.calls
+    assert v.ws.results()[1] == REFUSED, v.ws.results()
+
+    # A handed request keeps the robot awake for its answer, until the answer is told.
+    v = voice()
+    await v.finished({"output": [SPOKEN, call("delegate", request="Is the garage closed?", photo=True)]})
+    assert v.link.calls[0][1]["text"] == "Is the garage closed?" and v.link.calls[0][1]["jpeg"], v.link.calls
+    assert v.waiting_until > time.monotonic() + 200 and v.ws.count("response.create") == 0
+    v.results.append("Yes, it is closed.")
+    await v.flush()
+    assert (v.waiting_until, v.telling) == (0.0, True)
+
+    # Sleep by voice ends the session; a look shows the model the picture.
+    v = voice()
+    await v.finished({"output": [call("look")]})
+    assert v.ws.sent[0]["item"]["content"][1]["type"] == "input_image" and v.ws.results() == ["The picture follows."]
+    await v.finished({"output": [call("sleep")]})
+    assert v.reason == "asked to sleep"
+    print("ok")
+
+asyncio.run(main())
+"#;
+
+/// V-2 and V-4: in one voice session, words the assistant sends are only
+/// said, whatever they say; only the room's own speech hands a request on or
+/// ends the session. A handed request keeps the robot awake for its answer.
+/// The first rule failed on a robot on 2026-11-22: a relayed sentence ending
+/// in "sleeps again" put it to sleep unspoken.
+#[test]
+fn a_voice_session_only_says_the_assistants_words_and_waits_for_a_promised_answer() {
+    let output = Command::new("python3")
+        .args(["-c", VOICE_SESSION])
+        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/devices/reachy"))
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "ok",
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }

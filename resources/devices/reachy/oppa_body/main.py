@@ -20,7 +20,6 @@ import asyncio
 import base64
 import json
 import logging
-import re
 import threading
 import time
 import urllib.error
@@ -36,7 +35,6 @@ CONFIG = Path.home() / ".config" / "oppa-body.json"
 RATE = 24000            # the provider's audio: 16-bit mono
 POLL_TIMEOUT = 40       # above the adapter's own long poll
 TOUCH = 0.35            # radians an antenna must move within a second to wake the robot
-WORDS = re.compile(r"[^\W_]")
 
 log = logging.getLogger("oppa_body")
 
@@ -148,17 +146,19 @@ class Body:
 
 
 class Voice:
-    """One voice session, from waking to sleeping. One response runs at a time:
-    `owed` means a response we asked for was refused because another was
-    running, so it is asked for again when that one ends."""
+    """One voice session, from waking to sleeping. One response runs at a time.
+    `telling` is true while the response that runs is one we asked for to say
+    the assistant's words. `owed` holds a response we asked for that was
+    refused because another was running: it is asked for again, with its own
+    `telling`, when that one ends."""
 
     def __init__(self, body, link, inbox, grant):
         self.body, self.link, self.inbox, self.grant = body, link, inbox, grant
         self.ws = None
-        self.busy = self.owed = self.telling = self.mute = False
-        self.heard = ""
+        self.busy = self.telling = self.mute = False
+        self.owed = None            # None, or the `telling` of the response that was refused
         self.results = []           # words from the assistant, waiting to be said
-        self.promised = 0           # requests handed over and not yet answered
+        self.waiting_until = 0.0    # an answer was promised to the room: stay awake for it until then
         self.active = time.monotonic()
         self.playing_until = 0.0
         self.reason = None          # why the session ends
@@ -229,15 +229,10 @@ class Voice:
                 self.body.hush()        # the person cut in: drop what is left of the reply
                 log.debug("speech started")
                 self.mute = True
-                self.heard = ""
                 self.playing_until = 0.0
                 self.active = time.monotonic()
             elif kind == "input_audio_buffer.speech_stopped":
                 self.active = time.monotonic()
-            elif kind == "conversation.item.input_audio_transcription.completed":
-                text = (event.get("transcript") or "").strip()
-                self.heard = text if WORDS.search(text) else ""
-                log.debug("heard: %s", text)
             elif kind == "response.output_audio_transcript.done":
                 log.debug("said: %s", event.get("transcript"))
             elif kind == "response.created":
@@ -248,7 +243,8 @@ class Voice:
             elif kind == "error":
                 message = (event.get("error") or {}).get("message") or "the voice provider reported an error"
                 if "active response" in message or "ongoing" in message:
-                    self.owed = True
+                    # Ours was refused: the response that runs is the room's own, and may use its tools.
+                    self.owed, self.telling = self.owed or self.telling, False
                 else:
                     log.warning("voice provider: %s", message)
         self.reason = self.reason or "the voice provider closed the line"
@@ -277,18 +273,17 @@ class Voice:
                 self.reason = "asked to sleep"
                 return
             elif name == "delegate":
-                text = self.heard or str(arguments.get("request") or "").strip()
+                text = str(arguments.get("request") or "").strip()
                 if text:
-                    result = await self.hand(text, bool(arguments.get("photo")))
-                    answer = not (spoke and self.promised)   # it already said it is on it
+                    result, taken = await self.hand(text, bool(arguments.get("photo")))
+                    answer = not (spoke and taken)   # it already said it is on it
             elif name == "look":
                 result = await self.show()
             await self.send({"type": "conversation.item.create", "item": {
                 "type": "function_call_output", "call_id": item.get("call_id"), "output": result}})
             again = again or answer
-        self.heard = ""
         if again:
-            await self.respond()
+            await self.respond(telling)     # asked again to say the words, it still runs no tool
         else:
             await self.flush()
 
@@ -300,12 +295,12 @@ class Voice:
             await asyncio.to_thread(self.link.call, "/v1/hand", body)
         except OSError as error:
             log.warning("hand-off failed: %s", error)
-            return "The assistant could not be reached, so nothing was sent. Say so."
-        self.promised += 1
+            return "The assistant could not be reached, so nothing was sent. Say so.", False
         self.handed += 1
         self.active = time.monotonic()
+        self.waiting_until = self.active + self.grant["work_seconds"]
         return ("The assistant has the request and is working on it. Its answer will arrive as an [Assistant] "
-                "message. If you have not said so yet, say you are on it, in a few words.")
+                "message. If you have not said so yet, say you are on it, in a few words."), True
 
     async def show(self):
         try:
@@ -317,23 +312,25 @@ class Voice:
             {"type": "input_image", "image_url": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()}]}})
         return "The picture follows."
 
-    async def respond(self):
-        self.busy, self.owed = True, False
+    async def respond(self, telling=False):
+        self.busy, self.telling = True, telling
         await self.send({"type": "response.create"})
 
     async def flush(self):
-        """Give the voice model the next words from the assistant to say."""
+        """Ask again for a response that was refused, or give the voice model the
+        assistant's next words to say."""
         if self.busy:
             return
-        if not self.owed:
-            if not self.results:
-                return
-            await self.send({"type": "conversation.item.create", "item": {"type": "message", "role": "user", "content": [
-                {"type": "input_text", "text": "[Assistant] " + self.results.pop(0)}]}})
-            self.promised = max(0, self.promised - 1)
-        self.telling = True
+        if self.owed is not None:
+            telling, self.owed = self.owed, None
+            return await self.respond(telling)
+        if not self.results:
+            return
+        await self.send({"type": "conversation.item.create", "item": {"type": "message", "role": "user", "content": [
+            {"type": "input_text", "text": "[Assistant] " + self.results.pop(0)}]}})
+        self.waiting_until = 0.0
         self.active = time.monotonic()
-        await self.respond()
+        await self.respond(telling=True)
 
     async def orders(self):
         """What the adapter sends while the robot is awake."""
@@ -350,11 +347,11 @@ class Voice:
                 return
 
     async def watch(self):
-        """Sleep after a stretch of silence; wait longer while an answer is owed to the room."""
+        """Sleep after a stretch of silence, but not while an answer promised to the room may still come."""
         while self.reason is None:
             await asyncio.sleep(1)
-            quiet = time.monotonic() - max(self.active, self.playing_until)
-            if quiet > (self.grant["work_seconds"] if self.promised else self.grant["idle_seconds"]):
+            now = time.monotonic()
+            if now - max(self.active, self.playing_until) > self.grant["idle_seconds"] and now > self.waiting_until:
                 self.reason = "quiet"
 
 
