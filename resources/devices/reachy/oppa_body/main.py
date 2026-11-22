@@ -74,6 +74,7 @@ class Body:
         self.awake = False
         self.antennas = None
         self.antennas_at = 0.0
+        self.following = True       # the head follows the face it sees, unless told to look elsewhere
         self.moves = {}             # name -> a dance or a recorded feeling the robot can play
         try:
             from reachy_mini.motion.recorded_move import RecordedMoves
@@ -109,7 +110,8 @@ class Body:
         """Run one of the body's own tools. Blocks while the body moves."""
         mini = self.mini
         if name == "look_toward":
-            if arguments.get("direction") == "person":
+            self.following = arguments.get("direction") == "person"
+            if self.following:
                 mini.start_head_tracking()
             else:
                 from reachy_mini.utils import create_head_pose
@@ -138,6 +140,7 @@ class Body:
         self.out_rate = mini.media.get_output_audio_samplerate()
         mini.enable_wobbling()          # the head moves with the voice
         mini.start_head_tracking()      # and turns to the face it sees
+        self.following = True
         # The waking move's own sound and motors are not someone speaking: on 2026-11-22 they
         # were heard as a word and the robot went straight back to sleep.
         settled = time.monotonic() + 1.0
@@ -179,24 +182,37 @@ class Body:
         self.mini.media.audio.clear_player()
 
     def photo(self):
-        """One camera frame. Asleep, the head is down, so it lifts for the picture."""
-        lifted = not self.awake
+        """One camera frame, taken with the head still: a head that follows a face or moves with
+        the voice blurs the picture. Asleep, the head is down, so it lifts for the picture."""
+        mini, lifted = self.mini, not self.awake
         if lifted:
-            self.mini.enable_motors()
-            self.mini.wake_up()
-            time.sleep(0.6)
+            mini.enable_motors()
+            mini.wake_up()
+        else:
+            mini.stop_head_tracking()
+            mini.disable_wobbling()
         try:
+            time.sleep(1.0 if lifted else 0.6)      # the head comes to rest
+            frames = []
             for _ in range(20):
-                jpeg = self.mini.media.get_frame_jpeg()
+                jpeg = mini.media.get_frame_jpeg()
                 if jpeg:
-                    return bytes(jpeg)
+                    frames.append(bytes(jpeg))
+                    if len(frames) == 5:
+                        break
                 time.sleep(0.1)
-            raise OSError("the camera gave no picture")
+            if not frames:
+                raise OSError("the camera gave no picture")
+            return max(frames, key=len)     # the sharpest of a few: detail makes a JPEG larger
         finally:
             if lifted:
-                self.mini.goto_sleep()
-                self.mini.disable_motors()
+                mini.goto_sleep()
+                mini.disable_motors()
                 self.antennas = None
+            else:
+                mini.enable_wobbling()
+                if self.following:
+                    mini.start_head_tracking()
 
     def touched(self):
         """Asleep, the motors are off and an antenna moves only when someone moves it."""
