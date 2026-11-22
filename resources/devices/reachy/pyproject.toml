@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oppa_body"
+version = "0.1.0"
+description = "OPPA's body on a Reachy Mini: microphone, speaker, camera and motors for the OPPA robot channel"
+requires-python = ">=3.10"
+dependencies = ["reachy-mini", "websockets>=13", "numpy", "scipy"]
+
+[project.entry-points."reachy_mini_apps"]
+oppa_body = "oppa_body.main:OppaBody"
+
+[tool.setuptools]
+packages = ["oppa_body"]

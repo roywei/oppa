@@ -4,6 +4,21 @@
 
 First public release.
 
+- A Reachy Mini robot is a channel: a room device you talk with in full duplex. A voice model (OpenAI
+  Realtime, `gpt-realtime-2.1` by default) answers small talk and hands everything else to the assistant, so
+  only the voice is billed by the provider. The robot sleeps until the assistant wakes it or has words for
+  the room, or someone moves an antenna; asleep it holds no voice session and records nothing. It sleeps
+  again when told to, by voice or by the assistant, and after a minute of quiet. The assistant steers it
+  with `reachy.py ctl` (status, wake, sleep, look); a look returns one camera picture without a voice
+  session. `resources/devices/reachy` has the app that runs on the robot and the set-up steps. Checked on
+  2026-11-22 on a robot with synthetic speech in place of its microphone: woken by `ctl`, a request was
+  handed to a real turn and its answer spoken 12 s later, a camera question answered, and sleep by voice,
+  by `ctl` and by quiet; on the robot's own speaker, words from the assistant were spoken and it slept
+  after the quiet. Spoken to through its own microphone
+  the same day, it answered and slept on request, after one fix: its own waking sound was heard as a word
+  and sent it back to sleep. The voice model can also turn the head and base, play a dance or a feeling and
+  set the volume. Not yet done: those body tools have not been tried on the robot; a spoken message
+  carries no `spoken` mark in the log (V-1); there is no wake word.
 - A tapback can be any one emoji, not only the six classic ones: `messages.react` takes a tapback's name or
   an emoji, and iMessage sends an emoji as a custom tapback, confirmed like the others by reading it back on
   the message. This needs imsg 0.19 or later; an older one refuses an emoji as not sent. The manual now says
