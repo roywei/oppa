@@ -20,9 +20,10 @@ Tapbacks (`react`) and the typing bubble (`typing`) need imsg's bridge: a helper
 inside Messages, which runs only with SIP off and Messages started by `imsg
 launch`. The adapter claims them when the helper runs or it may start it
 (--launch-bridge with SIP off, once per boot); each call checks the helper again
-and is refused as not sent while it is down. Text works the same either way. Only
-the six classic tapbacks: imsg cannot send a custom emoji one. A tapback is a
-receipt only once history shows a new reaction of ours of that kind on the message.
+and is refused as not sent while it is down. Text works the same either way. A
+tapback is one of the six classic ones by name or any one emoji, which imsg 0.19
+and later sends and an older one refuses. It is a receipt only once history shows
+a new reaction of ours of that kind on the message.
 
 A contact card (`contact`) is a vCard the adapter writes at send time: the name
 the host gives, the face the host attaches, and the address this chat reaches
@@ -56,7 +57,8 @@ MAX_MEMBERS = 64
 EDIT_WINDOW_SECONDS = 20 * 60
 # At most this many of a chat's newest rows are read to find a remembered message's edit.
 HISTORY_ROWS = 800
-# The tapbacks imsg's bridge sends.
+# The tapbacks imsg's bridge sends by name; anything else the host passes is one
+# emoji, which imsg 0.19 and later sends as a custom tapback and older ones refuse.
 TAPBACKS = ("love", "like", "dislike", "laugh", "emphasize", "question")
 # History names a sent "emphasize" as "emphasis".
 READ_AS = {"emphasize": "emphasis"}
@@ -395,7 +397,7 @@ class Adapter:
         """A tapback through imsg's bridge, confirmed only when Messages shows a new
         reaction of ours of that kind on the message. imsg's answer alone is no receipt."""
         chat, target, kind = params.get("conversation"), params.get("message"), params.get("reaction")
-        if not (bounded(chat) and bounded(target)) or kind not in TAPBACKS:
+        if not (bounded(chat) and bounded(target)) or not (kind in TAPBACKS or (bounded(kind, 64) and not kind.isascii())):
             raise AdapterFailure(NOT_SENT, "no conversation, message or known reaction")
         if not (self.bridge_up or {}).get("sendReaction"):
             raise AdapterFailure(NOT_SENT, "imsg's bridge is not running, so Messages takes no tapbacks now")
@@ -417,7 +419,7 @@ class Adapter:
                 now = self.own_reactions(chat_id, target) or {}
             except Exception:
                 now = {}
-            new = [rowid for rowid, seen in now.items() if seen == READ_AS.get(kind, kind) and rowid not in before]
+            new = [rowid for rowid, seen in now.items() if shows(seen, kind) and rowid not in before]
             if new:
                 return {"native_id": f"reaction:{max(new)}"}
             if time.monotonic() >= deadline:
@@ -429,7 +431,7 @@ class Adapter:
         when the message is not in view."""
         for message in self.history(chat_id, {target}):
             if message.get("guid") == target:
-                return {r["id"]: r.get("type") for r in message.get("reactions") or []
+                return {r["id"]: (r.get("type"), r.get("emoji")) for r in message.get("reactions") or []
                         if isinstance(r, dict) and r.get("is_from_me") and isinstance(r.get("id"), int)}
         return None
 
@@ -656,6 +658,15 @@ class AdapterFailure(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+def shows(seen, kind):
+    """Whether a reaction history lists as (type, emoji) is the `kind` that was sent:
+    a named tapback by its type, an emoji by itself. imsg sends the six classic
+    emoji as their named tapbacks, and history may drop the presentation selector."""
+    kind_type, emoji = seen
+    plain = lambda text: (text or "").replace("\ufe0f", "")
+    return kind_type == READ_AS.get(kind, kind) or (kind not in TAPBACKS and plain(emoji) == plain(kind))
 
 
 def bounded(value, limit=MAX_ID):
