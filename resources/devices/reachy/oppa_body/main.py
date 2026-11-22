@@ -8,9 +8,11 @@ or give it words to say, and a person can wake it by moving an antenna.
 
 Awake, it keeps one full-duplex session open with the voice provider, with a
 short-lived key and a session set-up that both come from the adapter. The voice
-model's three tools run here: `delegate` hands a request to the adapter,
-`look` shows the model a camera frame, `sleep` ends the session. The robot also
-sleeps by itself after a stretch of silence, so a forgotten session stops costing.
+model's tools run here: `delegate` hands a request to the adapter, `look`
+shows the model a camera frame, `sleep` ends the session, and the body's own
+tools (Body.tools) turn the head and base, play a dance or a feeling, and set
+the volume. The robot also sleeps by itself after a stretch of silence, so a
+forgotten session stops costing.
 
 Configuration is one file, ~/.config/oppa-body.json:
     {"oppa": "http://the-mac.local:8767", "token": "<the adapter's token>"}
@@ -20,6 +22,7 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import threading
 import time
 import urllib.error
@@ -35,6 +38,8 @@ CONFIG = Path.home() / ".config" / "oppa-body.json"
 RATE = 24000            # the provider's audio: 16-bit mono
 POLL_TIMEOUT = 40       # above the adapter's own long poll
 TOUCH = 0.35            # radians an antenna must move within a second to wake the robot
+EMOTIONS = "pollen-robotics/reachy-mini-emotions-library"
+HEAD = {"left": (35, 0), "right": (-35, 0), "up": (0, -20), "down": (0, 20), "front": (0, 0)}   # yaw, pitch in degrees
 
 log = logging.getLogger("oppa_body")
 
@@ -69,6 +74,59 @@ class Body:
         self.awake = False
         self.antennas = None
         self.antennas_at = 0.0
+        self.moves = {}             # name -> a dance or a recorded feeling the robot can play
+        try:
+            from reachy_mini.motion.recorded_move import RecordedMoves
+            from reachy_mini_dances_library.collection.dance import AVAILABLE_MOVES
+            from reachy_mini_dances_library.dance_move import DanceMove
+            self.moves = {name: (lambda name=name: DanceMove(name)) for name in AVAILABLE_MOVES}
+            feelings = RecordedMoves(EMOTIONS)
+            self.moves.update({name: (lambda name=name: feelings.get(name)) for name in feelings.list_moves()})
+        except Exception as error:      # the libraries or their data are missing: the robot still talks
+            log.warning("no dances or feelings: %s", error)
+        self.tools = [
+            {"type": "function", "name": "look_toward",
+             "description": "Turn the robot's head. `person` follows the face it sees, which is how it looks unless told.",
+             "parameters": {"type": "object", "required": ["direction"], "properties": {
+                 "direction": {"type": "string", "enum": [*HEAD, "person"]}}}},
+            {"type": "function", "name": "turn_body",
+             "description": "Turn the robot on its base to an angle in degrees: 0 is forward, positive is to its left.",
+             "parameters": {"type": "object", "required": ["degrees"], "properties": {
+                 "degrees": {"type": "number", "minimum": -150, "maximum": 150}}}},
+            {"type": "function", "name": "set_volume",
+             "description": "Set how loud the robot speaks, from 0 to 100.",
+             "parameters": {"type": "object", "required": ["percent"], "properties": {
+                 "percent": {"type": "number", "minimum": 0, "maximum": 100}}}},
+        ]
+        if self.moves:
+            self.tools.append(
+                {"type": "function", "name": "express",
+                 "description": "Play a dance or show a feeling with the robot's body.",
+                 "parameters": {"type": "object", "required": ["move"], "properties": {
+                     "move": {"type": "string", "enum": sorted(self.moves)}}}})
+
+    def act(self, name, arguments):
+        """Run one of the body's own tools. Blocks while the body moves."""
+        mini = self.mini
+        if name == "look_toward":
+            if arguments.get("direction") == "person":
+                mini.start_head_tracking()
+            else:
+                from reachy_mini.utils import create_head_pose
+                yaw, pitch = HEAD[arguments["direction"]]
+                mini.stop_head_tracking()
+                mini.goto_target(head=create_head_pose(yaw=yaw, pitch=pitch, degrees=True), duration=0.6, body_yaw=None)
+        elif name == "turn_body":
+            degrees = max(-150.0, min(150.0, float(arguments["degrees"])))
+            mini.goto_target(body_yaw=math.radians(degrees), duration=1.0)
+        elif name == "set_volume":
+            percent = int(max(0, min(100, float(arguments["percent"]))))
+            request = urllib.request.Request("http://127.0.0.1:8000/api/volume/set", json.dumps({"volume": percent}).encode(),
+                                             {"Content-Type": "application/json"})
+            urllib.request.urlopen(request, timeout=5).close()
+        elif name == "express":
+            # Without the move's own sound, which would play over the voice.
+            asyncio.run(mini.async_play_move(self.moves[arguments["move"]](), initial_goto_duration=0.5, sound=False))
 
     def wake(self):
         mini = self.mini
@@ -80,15 +138,21 @@ class Body:
         self.out_rate = mini.media.get_output_audio_samplerate()
         mini.enable_wobbling()          # the head moves with the voice
         mini.start_head_tracking()      # and turns to the face it sees
+        # The waking move's own sound and motors are not someone speaking: on 2026-11-22 they
+        # were heard as a word and the robot went straight back to sleep.
+        settled = time.monotonic() + 1.0
+        while time.monotonic() < settled:
+            if mini.media.get_audio_sample() is None:
+                time.sleep(0.01)
         self.awake = True
 
     def sleep(self):
         mini = self.mini
         self.awake = False
         mini.stop_head_tracking()
-        mini.disable_wobbling()
         mini.media.stop_recording()     # asleep, nothing is recorded
-        mini.media.stop_playing()
+        mini.media.stop_playing()       # before the wobbling it feeds is taken away
+        mini.disable_wobbling()
         mini.goto_sleep()
         mini.disable_motors()
         self.antennas = None
@@ -162,6 +226,8 @@ class Voice:
         self.active = time.monotonic()
         self.playing_until = 0.0
         self.reason = None          # why the session ends
+        self.acts = set(tool["name"] for tool in getattr(body, "tools", ()))
+        self.acting = None          # the body's move in progress; one at a time
         self.spoken = 0.0           # seconds of speech played, for the log
         self.handed = 0
 
@@ -173,7 +239,11 @@ class Voice:
         self.ws = await websockets.connect(
             self.grant["url"], additional_headers={"Authorization": "Bearer " + self.grant["secret"]}, max_size=None)
         try:
-            await self.send({"type": "session.update", "session": self.grant["session"]})
+            session = json.loads(json.dumps(self.grant["session"]))
+            session["tools"] = session["tools"] + self.body.tools
+            if log.isEnabledFor(logging.DEBUG):     # what was heard, written out for the log only
+                session["audio"]["input"]["transcription"] = {"model": "gpt-4o-mini-transcribe"}
+            await self.send({"type": "session.update", "session": session})
             await asyncio.to_thread(self.body.wake)
             if first.get("kind") == "say":
                 self.results.append(first["text"])
@@ -233,11 +303,14 @@ class Voice:
                 self.active = time.monotonic()
             elif kind == "input_audio_buffer.speech_stopped":
                 self.active = time.monotonic()
+            elif kind == "conversation.item.input_audio_transcription.completed":
+                log.debug("heard: %s", event.get("transcript"))
             elif kind == "response.output_audio_transcript.done":
                 log.debug("said: %s", event.get("transcript"))
             elif kind == "response.created":
                 self.busy = True
                 self.mute = False
+                log.debug("response started")
             elif kind == "response.done":
                 await self.finished(event.get("response") or {})
             elif kind == "error":
@@ -251,6 +324,7 @@ class Voice:
 
     async def finished(self, response):
         """A response ended: run the tools it called, then say what is waiting."""
+        log.debug("response ended: %s %s", response.get("status"), [item.get("type") for item in response.get("output") or []])
         self.busy = False
         # A response that tells the assistant's words runs no tool: only the room's own speech hands
         # a request on or ends the session, whatever the words being told say.
@@ -279,6 +353,8 @@ class Voice:
                     answer = not (spoke and taken)   # it already said it is on it
             elif name == "look":
                 result = await self.show()
+            elif name in self.acts:
+                result = self.move(name, arguments)
             await self.send({"type": "conversation.item.create", "item": {
                 "type": "function_call_output", "call_id": item.get("call_id"), "output": result}})
             again = again or answer
@@ -301,6 +377,21 @@ class Voice:
         self.waiting_until = self.active + self.grant["work_seconds"]
         return ("The assistant has the request and is working on it. Its answer will arrive as an [Assistant] "
                 "message. If you have not said so yet, say you are on it, in a few words."), True
+
+    def move(self, name, arguments):
+        """Start one of the body's own tools without waiting for it: a dance takes
+        seconds, and the voice goes on meanwhile."""
+        if self.acting is not None and not self.acting.done():
+            return "The body is still doing the last thing asked. Try again when it is done."
+
+        async def act():
+            try:
+                await asyncio.to_thread(self.body.act, name, arguments)
+            except Exception as error:      # a bad argument or a motor that refused: the talk goes on
+                log.warning("%s failed: %s", name, error)
+
+        self.acting = asyncio.create_task(act())
+        return "Doing it now."
 
     async def show(self):
         try:

@@ -14,8 +14,11 @@ First public release.
   2026-11-22 on a robot with synthetic speech in place of its microphone: woken by `ctl`, a request was
   handed to a real turn and its answer spoken 12 s later, a camera question answered, and sleep by voice,
   by `ctl` and by quiet; on the robot's own speaker, words from the assistant were spoken and it slept
-  after the quiet. Not yet done: nobody has spoken to the robot's own microphone, and waking by antenna
-  has not been tried; a spoken message carries no `spoken` mark in the log (V-1); there is no wake word.
+  after the quiet. Spoken to through its own microphone
+  the same day, it answered and slept on request, after one fix: its own waking sound was heard as a word
+  and sent it back to sleep. The voice model can also turn the head and base, play a dance or a feeling and
+  set the volume. Not yet done: those body tools have not been tried on the robot; a spoken message
+  carries no `spoken` mark in the log (V-1); there is no wake word.
 - The iMessage typing bubble shows in a group too while a turn answers someone there. It showed only in a
   direct chat, since a group turn may end silent; one that does clears the bubble.
 - Voice on the web page records from the input chosen in the system's sound settings. Chrome, asked for
