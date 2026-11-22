@@ -4,6 +4,18 @@
 
 First public release.
 
+- A Reachy Mini robot is a channel: a room device you talk with in full duplex. A voice model (OpenAI
+  Realtime, `gpt-realtime-2.1` by default) answers small talk and hands everything else to the assistant, so
+  only the voice is billed by the provider. The robot sleeps until the assistant wakes it or has words for
+  the room, or someone moves an antenna; asleep it holds no voice session and records nothing. It sleeps
+  again when told to, by voice or by the assistant, and after a minute of quiet. The assistant steers it
+  with `reachy.py ctl` (status, wake, sleep, look); a look returns one camera picture without a voice
+  session. `resources/devices/reachy` has the app that runs on the robot and the set-up steps. Checked on
+  2026-11-22 on a robot with synthetic speech in place of its microphone: woken by `ctl`, a request was
+  handed to a real turn and its answer spoken 12 s later, a camera question answered, and sleep by voice,
+  by `ctl` and by quiet; on the robot's own speaker, words from the assistant were spoken and it slept
+  after the quiet. Not yet done: nobody has spoken to the robot's own microphone, and waking by antenna
+  has not been tried; a spoken message carries no `spoken` mark in the log (V-1); there is no wake word.
 - The iMessage typing bubble shows in a group too while a turn answers someone there. It showed only in a
   direct chat, since a group turn may end silent; one that does clears the bubble.
 - Voice on the web page records from the input chosen in the system's sound settings. Chrome, asked for

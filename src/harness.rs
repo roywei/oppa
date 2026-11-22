@@ -30,7 +30,7 @@ pub const HARNESS_ADAPTERS: [(&str, &str); 3] = [
     ("claude.py", include_str!("../resources/adapters/claude.py")),
     ("common.py", include_str!("../resources/adapters/common.py")),
 ];
-pub const CHANNEL_ADAPTERS: [(&str, &str); 6] = [
+pub const CHANNEL_ADAPTERS: [(&str, &str); 7] = [
     (
         "imessage.py",
         include_str!("../resources/adapters/imessage.py"),
@@ -43,6 +43,7 @@ pub const CHANNEL_ADAPTERS: [(&str, &str); 6] = [
     ),
     ("web.py", include_str!("../resources/adapters/web.py")),
     ("web.html", include_str!("../resources/adapters/web.html")),
+    ("reachy.py", include_str!("../resources/adapters/reachy.py")),
 ];
 /// Script connectors are called through the broker, which lists their tools
 /// at each run, so like channel adapters they are not session policy. A slice,
