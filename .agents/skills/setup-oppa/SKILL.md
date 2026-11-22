@@ -473,7 +473,8 @@ read their answers. Do this only if the owner said yes in step 3.
 
 ## Tapbacks and typing (optional)
 
-The assistant can react with the six classic tapbacks and show the typing
+The assistant can react with tapbacks (any emoji with imsg 0.19 or later, the
+six classic ones before that) and show the typing
 bubble while it writes. Messages offers no way to do either from outside, so
 imsg loads a small helper into Messages (its bridge), and macOS allows that only
 with System Integrity Protection (SIP) off. Without it nothing breaks: the

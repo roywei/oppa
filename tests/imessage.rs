@@ -106,7 +106,8 @@ for line in sys.stdin:
             for row in rows:
                 if row['guid'] == params['message_guid'] and 'UNSEEN' not in row.get('text', ''):
                     kind = {'emphasize': 'emphasis'}.get(params['kind'], params['kind'])  # imsg's history names
-                    row.setdefault('reactions', []).append({'id': 9000 + len(row['reactions']), 'type': kind, 'is_from_me': True})
+                    shown = {'type': kind} if kind.isascii() else {'type': 'custom', 'emoji': kind}
+                    row.setdefault('reactions', []).append({'id': 9000 + len(row['reactions']), 'is_from_me': True, **shown})
             rows_path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
         emit({'jsonrpc': '2.0', 'id': rid, 'result': {'ok': True}})
     elif method == 'typing':
@@ -1007,6 +1008,41 @@ async fn the_bubble_shows_in_a_group_while_a_turn_answers_someone_there() {
             Some(&json!({"chat_guid":GROUP,"typing":true})),
             Some(&json!({"chat_guid":GROUP,"typing":false}))
         )
+    );
+    stop.send(()).unwrap();
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_turn_reacts_with_any_one_emoji_and_words_are_refused() {
+    // B-6: reactions are expression. The owner asked on 2026-11-21 for more
+    // than the six classic tapbacks. Messages takes any one emoji as a custom
+    // tapback, and history shows it as `custom` with the emoji: that is the
+    // readback. A word that is no tapback's name is refused by the broker.
+    let fixture = Fixture::new();
+    let script = REACTOR.replace(
+        "react(seq, 'emphasize'), react(seq, 'love')",
+        "react(seq, 'party'), react(seq, '\u{1F389}')",
+    );
+    let (server, stop) = serve_model(&fixture, &script).await;
+    fixture.arrive("a", from(DM, OWNER, "I got the job!"));
+    fixture
+        .until("the confirmed tapback", |f| {
+            f.transcript(DM)
+                .iter()
+                .any(|e| e.kind == "reaction" && e.delivery == Some(DeliveryState::Sent))
+        })
+        .await;
+    settle().await;
+    assert_eq!(
+        lines(fixture.root.path().join("messages/tapbacks.jsonl")),
+        vec![json!({"chat_guid":DM,"message_guid":"G101","kind":"\u{1F389}"})]
+    );
+    let events = fixture.transcript(DM);
+    assert_eq!(events[1].body, "\u{1F389}");
+    assert_eq!(
+        events[2].body,
+        "See you then. error \u{1F389}:queued error error"
     );
     stop.send(()).unwrap();
     server.await.unwrap().unwrap();

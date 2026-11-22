@@ -19,6 +19,10 @@ First public release.
   and sent it back to sleep. The voice model can also turn the head and base, play a dance or a feeling and
   set the volume. Not yet done: those body tools have not been tried on the robot; a spoken message
   carries no `spoken` mark in the log (V-1); there is no wake word.
+- A tapback can be any one emoji, not only the six classic ones: `messages.react` takes a tapback's name or
+  an emoji, and iMessage sends an emoji as a custom tapback, confirmed like the others by reading it back on
+  the message. This needs imsg 0.19 or later; an older one refuses an emoji as not sent. The manual now says
+  friends react often and with the emoji that fits.
 - The iMessage typing bubble shows in a group too while a turn answers someone there. It showed only in a
   direct chat, since a group turn may end silent; one that does clears the bubble.
 - Voice on the web page records from the input chosen in the system's sound settings. Chrome, asked for
