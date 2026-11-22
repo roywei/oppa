@@ -20,6 +20,11 @@ First public release.
   about 0.5 s, the hand-off in 0.6 s, first spoken audio in about 1 s. Not yet done: the microphone and
   playback code has been checked for syntax only and needs a first real try in a browser; a spoken message
   carries no `spoken` mark in the log (V-1); live small talk is not logged.
+- The nightly review gets up to 15 minutes a turn, or an agent's `timeout_seconds` when that is longer. It
+  ran under the deadline for a reply, and on an instance where that is two minutes its turns were ended as
+  timeouts mid-read, two in a row on 2026-11-12, so a night's span was read again slot after slot or only in
+  part. Every other turn keeps the agent's `timeout_seconds`. While a review runs, a message in the same
+  chat waits for it to end. Not yet run on a real instance.
 
 - Slack replies are sent as Markdown that Slack renders: tables, code blocks with their language, lists and
   links, where a reply used to be rewritten into Slack's older markup and showed tables and code as plain text.

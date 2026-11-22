@@ -1056,6 +1056,11 @@ impl Runtime {
                         .is_some_and(|at| Utc::now().signed_duration_since(at).num_minutes() < 60)
             });
         'agents: for agent in &self.config.agents {
+            // A reply's deadline, or the longer one the nightly review gets.
+            let agent = &harness::AgentManifest {
+                timeout_seconds: crate::memory_sync::turn_seconds(input, agent.timeout_seconds),
+                ..agent.clone()
+            };
             let mut session = self.store.session(conversation, &agent.id, policy)?;
             // An idle or day-old native session is retired; the canonical log
             // rebuilds a fresh one from its recent window and history tools.

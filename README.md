@@ -267,7 +267,8 @@ conversations and keeps what they taught as skills and memory, and may start a
 set to this checkout); it never merges or installs one. It also sets the next
 day's heartbeat pace, 30 to 480 minutes, from how much your channels needed you.
 It sends nothing at night: the day's first heartbeat tells you what it improved
-and what waits on you. `oppa memory review` runs the review at the console.
+and what waits on you. A review turn may run for 15 minutes, longer than a
+reply's `timeout_seconds`. `oppa memory review` runs the review at the console.
 
 Memory is what is personal: you, your family and the people around you, your
 home, health and holdings. What you read and research (articles, filings,

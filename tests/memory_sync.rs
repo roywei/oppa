@@ -522,3 +522,63 @@ async fn each_night_a_review_is_given_what_came_after_the_last_finished_one() {
     assert!(prompt.contains(&skills.display().to_string()), "{prompt}");
     assert!(prompt.contains("seq after 0 through 5"));
 }
+
+#[tokio::test]
+async fn a_review_outlasts_the_reply_deadline_that_ends_any_other_schedule_turn() {
+    // Incident 2026-11-12: with a two-minute reply deadline, two review turns
+    // in a row were ended mid-read as timeouts, and the third finished only
+    // by skipping most of its span. A review has its own, longer deadline;
+    // every other schedule turn keeps the agent's deadline for a reply. The
+    // stand-in model answers after two seconds; a reply here gets one.
+    let dir = tempfile::tempdir().unwrap();
+    let paths = Paths::new(dir.path().join("runtime"), Some(dir.path().join("private"))).unwrap();
+    paths.prepare().unwrap();
+    let mut config = config(dir.path(), oppa::memory_sync::default_sources());
+    config.agents[0].timeout_seconds = 1;
+    config.agents[0].command[2] = r#"
+import json, sys, time
+json.load(sys.stdin)
+time.sleep(2)
+print(json.dumps({"type":"session","handle":"slow-session"}))
+print(json.dumps({"type":"answer","text":"NO_REPLY"}))
+print(json.dumps({"type":"completed"}))
+"#
+    .into();
+    fs::write(paths.config_file(), toml::to_string(&config).unwrap()).unwrap();
+    Vault::init(&paths.vault()).unwrap();
+    Store::open(&paths.database()).unwrap();
+    oppa::harness::install_bundled_adapters(&paths.runtime).unwrap();
+    let sync = config.memory_sync.clone().unwrap();
+    let review = sync
+        .due(&paths, 5, "console", chrono::Local::now())
+        .remove(0);
+    assert_eq!(review.id, oppa::memory_sync::REVIEW_ID);
+    // The same instruction under any other id is an ordinary schedule.
+    let mut other = review.clone();
+    other.id = "other".into();
+    let runtime = Runtime::open(paths.clone()).unwrap();
+    let slot = chrono::Local::now();
+    let attempts = |id: &str| {
+        let event = Store::open(&paths.database())
+            .unwrap()
+            .latest_inbound("console", &format!("schedule:{id}:"))
+            .unwrap()
+            .unwrap();
+        let marker = paths.runtime.join(format!("runs/turn-{}.json", event.seq));
+        serde_json::from_slice::<Value>(&fs::read(marker).unwrap()).unwrap()
+    };
+    let ordinary = runtime
+        .fire_schedule(&other, &slot, &mut ConsoleDelivery(|_: &str| Ok(())))
+        .await;
+    assert!(ordinary.is_err(), "a reply's deadline ends a slow turn");
+    let failed = attempts("other");
+    assert_eq!(failed["state"], "failed");
+    assert_eq!(failed["attempts"][0]["failure"]["category"], "timeout");
+    let reviewed = runtime
+        .fire_schedule(&review, &slot, &mut ConsoleDelivery(|_: &str| Ok(())))
+        .await
+        .unwrap()
+        .expect("the review's turn ran");
+    assert!(reviewed.silent);
+    assert_eq!(attempts(oppa::memory_sync::REVIEW_ID)["state"], "completed");
+}
