@@ -328,7 +328,8 @@ due this afternoon), at most 12 in a day; ask what it is keeping an eye on to
 see them. When something needs you, such as a
 bill due in a note, it sends one suggestion that says what prompted it and asks.
 A heartbeat only reads, whatever your access setting; your reply is a turn of
-its own. Decline a suggestion and it is noted and not raised again; ask it to
+its own, and a message of yours still waiting when one comes due is answered
+first. Decline a suggestion and it is noted and not raised again; ask it to
 stop suggesting about a kind of thing ("no more bill reminders") and that is
 noted too, in `assistant/declined.md`, which every heartbeat is shown. With
 `digest` set, once a week at that time you get one message on what the week's

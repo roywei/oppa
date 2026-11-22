@@ -25,6 +25,12 @@ First public release.
   timeouts mid-read, two in a row on 2026-11-12, so a night's span was read again slot after slot or only in
   part. Every other turn keeps the agent's `timeout_seconds`. While a review runs, a message in the same
   chat waits for it to end. Not yet run on a real instance.
+- A heartbeat or a wake that comes due while a message waits for its turn runs after that turn. A message
+  waits `gather_seconds` for its author's follow-ups; a look handed over in that wait used to run first, read
+  the message and answer it read-only. On 2026-11-11 an owner who asked about something on the computer two
+  seconds before a heartbeat was told the turn could not look. The look is now left until serve's next tick,
+  up to 30 seconds after the message's turn ends. A look about a newcomer that falls in the same wait is not
+  held. Not yet run on a real instance.
 
 - Slack replies are sent as Markdown that Slack renders: tables, code blocks with their language, lists and
   links, where a reply used to be rewritten into Slack's older markup and showed tables and code as plain text.

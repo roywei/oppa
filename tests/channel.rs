@@ -3504,6 +3504,104 @@ async fn a_wake_the_assistant_set_fires_once_as_a_read_only_look() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_look_handed_over_while_the_owners_message_waits_runs_after_that_messages_turn() {
+    // Incident 2026-11-11: the owner asked about something on the computer
+    // two seconds before a heartbeat came due. Their message was logged and
+    // waiting out `gather_seconds` when serve handed the heartbeat over; the
+    // heartbeat's read-only turn ran first, read the question and could only
+    // say it had no way to look. P-1: the message's own turn, at the owner's
+    // access, goes first, and the look runs once it has ended. A heartbeat
+    // and a wake are handed over on the same tick and held by the same rule;
+    // a wake is the one a test can make due at a moment of its choosing. The
+    // wait is longer than the 30 seconds between ticks, so one falls in it.
+    let fixture = watched(Some(true));
+    let mut config = fixture.paths.load().unwrap();
+    config.sessions.gather_seconds = 35;
+    fs::write(
+        fixture.paths.config_file(),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+    let serving = Serving::start(&fixture.paths);
+    // The day's heartbeat, owed since serve started, is out of the way.
+    let (heartbeat, _) = fixture.heartbeat_ended().await;
+    fixture.deliver(
+        "m1",
+        message("dm-owner", "m1", "+15550001", "How is the build going?"),
+    );
+    let deadline = Instant::now() + EVENTUALLY;
+    let asked = loop {
+        let logged = fixture
+            .store()
+            .inbound_event("fake/acct/dm-owner", "m1")
+            .unwrap();
+        if let Some(event) = logged {
+            break event;
+        }
+        assert!(Instant::now() < deadline, "the message was never logged");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    let now = chrono::Local::now();
+    let wake = Schedule {
+        id: "build-check".into(),
+        at: now.format("%H:%M").to_string(),
+        date: Some(now.format("%Y-%m-%d").to_string()),
+        days: vec![],
+        conversation: "fake/acct/dm-owner".into(),
+        prompt: "See whether the build finished.".into(),
+        command: vec![],
+        timeout_seconds: 300,
+        window_minutes: 30,
+        enabled: true,
+        wake: true,
+        watch: None,
+    };
+    ScheduleStore::open(&fixture.paths)
+        .unwrap()
+        .add(&wake, "assistant", None)
+        .unwrap();
+    let (look, marker) = fixture
+        .look_ended("schedule:build-check:", heartbeat.seq)
+        .await;
+    fixture.wait_settled().await;
+    serving.stop();
+
+    let calls = fixture.harness_calls();
+    let kinds: Vec<_> = calls
+        .iter()
+        .map(|call| (&call["kind"], &call["access"]))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            (&json!("heartbeat"), &json!("read")),
+            (&json!("message"), &json!("computer")),
+            (&json!("heartbeat"), &json!("read")),
+        ],
+        "the owner's turn, then the look: {calls:?}"
+    );
+    assert_eq!(calls[1]["body"], "How is the build going?");
+    assert_eq!(calls[2]["look"]["kind"], "wake");
+    let sent = fixture.sent();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0]["body"], "Reply to: How is the build going?");
+    let answer = fixture
+        .store()
+        .transcript("fake/acct/dm-owner", asked.seq, 10)
+        .unwrap();
+    assert_eq!(
+        answer
+            .iter()
+            .map(|event| event.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["message", "heartbeat"],
+        "the answer is logged before the look"
+    );
+    assert!(look.seq > asked.seq);
+    assert_eq!(marker["state"], "completed");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_heartbeat_that_ends_without_a_word_fails_instead_of_passing_for_silence() {
     // P-1: silence is explicit. A heartbeat run whose answer is blank stopped
     // without deciding; its record says it failed and nothing is sent.
