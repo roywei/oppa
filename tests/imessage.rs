@@ -983,6 +983,36 @@ async fn a_turn_reacts_to_a_message_once_and_the_tapback_is_confirmed_by_reading
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_bubble_shows_in_a_group_while_a_turn_answers_someone_there() {
+    // B-6: typing only while composing. Asked for on 2026-11-21: a family
+    // group saw no bubble while the assistant wrote, because the host showed
+    // one only in a direct chat. A message's turn in a group shows it and
+    // clears it; a stranger's message there starts no turn and shows none.
+    let fixture = Fixture::new();
+    let (server, stop) = fixture.start().await;
+    fixture.arrive("a", from(GROUP, "+15559999", "Anyone free Friday?"));
+    settle().await;
+    assert!(!fixture.root.path().join("messages/typing.jsonl").exists());
+    fixture.arrive("b", from(GROUP, OWNER, "What do we have Friday?"));
+    fixture
+        .until("group reply", |f| {
+            f.transcript(GROUP).last().and_then(|e| e.delivery) == Some(DeliveryState::Sent)
+        })
+        .await;
+    settle().await;
+    let typing = lines(fixture.root.path().join("messages/typing.jsonl"));
+    assert_eq!(
+        (typing.first(), typing.last()),
+        (
+            Some(&json!({"chat_guid":GROUP,"typing":true})),
+            Some(&json!({"chat_guid":GROUP,"typing":false}))
+        )
+    );
+    stop.send(()).unwrap();
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_tapback_never_seen_on_its_message_stays_unknown() {
     // The 2026-09-15 audit of an earlier build found 7 of 13 reactions never
     // confirmed: imsg taking a tapback is not proof that it landed.
