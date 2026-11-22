@@ -52,6 +52,23 @@ pub(super) struct MessageReact {
 /// The tapbacks a channel takes; iMessage names these six.
 const REACTIONS: [&str; 6] = ["love", "like", "dislike", "laugh", "emphasize", "question"];
 
+/// Whether `reaction` could be one emoji: a few code points, each from the
+/// emoji blocks or one of their joiners. The channel decides whether it is
+/// exactly one and whether it can send it.
+fn emoji(reaction: &str) -> bool {
+    let count = reaction.chars().count();
+    (1..=12).contains(&count)
+        && reaction
+            .chars()
+            .any(|c| !matches!(c, '\u{200D}' | '\u{FE0F}' | '\u{20E3}'))
+        && reaction.chars().all(|c| {
+            matches!(c,
+                '\u{200D}' | '\u{FE0F}' | '\u{20E3}' | '\u{A9}' | '\u{AE}' | '\u{203C}' | '\u{2049}'
+                | '\u{2122}' | '\u{2139}' | '\u{2190}'..='\u{2BFF}' | '\u{3030}' | '\u{303D}'
+                | '\u{3297}' | '\u{3299}' | '\u{1F000}'..='\u{1FAFF}' | '\u{E0020}'..='\u{E007F}')
+        })
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ContactCard {
@@ -100,7 +117,7 @@ pub(super) fn definitions(grant: &RunGrant, context: &Value) -> Vec<Value> {
     }
     // A conversation turn reacts; a delegated task or heartbeat has no one to react to.
     if grant.task_access == TaskAccess::Manage {
-        tools.push(tool("messages.react", "React to a message in the current conversation with a tapback (love ❤️, like 👍, dislike 👎, laugh 😂, emphasize ‼️, question ❓), as a friend would: instead of a reply that would say only as much, or beside one. Name the message by its event_seq. A message takes one reaction from you, and the first is final, even one the channel refused: asking again returns that one. It goes out when this turn ends; a channel without reactions refuses it.", json!({"context":context,"event_seq":{"type":"integer"},"reaction":{"type":"string","enum":REACTIONS}}), &["context","event_seq","reaction"], false));
+        tools.push(tool("messages.react", "React to a message in the current conversation with a tapback, as a friend would: instead of a reply that would say only as much, or beside one. The reaction is love ❤️, like 👍, dislike 👎, laugh 😂, emphasize ‼️ or question ❓ by name, or any one emoji, such as 🔥, 🎉, 🙏 or 😭, where the channel sends those. Name the message by its event_seq. A message takes one reaction from you, and the first is final, even one the channel refused: asking again returns that one. It goes out when this turn ends; a channel without reactions refuses it.", json!({"context":context,"event_seq":{"type":"integer"},"reaction":{"type":"string","minLength":1,"maxLength":64}}), &["context","event_seq","reaction"], false));
         tools.push(tool("messages.contact_card", "Send your contact card in the current direct chat: your name, your face and the address this chat reaches you at, so the person saves you as a contact with one tap. Send it with your first reply to someone, and again after your name or face changes; the same card goes to a chat once, and asking again returns that one. Give your name as your soul gives it. It goes out when this turn ends; a channel without contact cards refuses it.", json!({"context":context,"name":{"type":"string","minLength":1,"maxLength":CARD_NAME}}), &["context","name"], false));
     }
     if grant.task_access != TaskAccess::Manage || grant.access.is_read() {
@@ -237,7 +254,7 @@ impl Broker {
         if self.launch.grant.task_access != TaskAccess::Manage {
             return Err(denied());
         }
-        if !REACTIONS.contains(&args.reaction.as_str()) {
+        if !REACTIONS.contains(&args.reaction.as_str()) && !emoji(&args.reaction) {
             return Err(invalid());
         }
         let grant = &self.launch.grant;
