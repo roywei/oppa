@@ -4,6 +4,8 @@
 
 First public release.
 
+- The iMessage typing bubble shows in a group too while a turn answers someone there. It showed only in a
+  direct chat, since a group turn may end silent; one that does clears the bubble.
 - Voice on the web page records from the input chosen in the system's sound settings. Chrome, asked for
   no microphone in particular, took the built-in one while Bluetooth earbuds were the system's input.
 - Voice on the web page says when the microphone is silent, as a Mac's built-in microphone is with the lid
@@ -87,7 +89,7 @@ First public release.
   text works as before and a tapback is refused as not sent. A turn reacts with `messages.react` (love, like, dislike,
   laugh, emphasize, question); a message takes one reaction, the first is final, and it is sent when the turn ends
   and counts as delivered only once Messages history shows it on the message. The bubble shows while a turn
-  answering someone in a direct chat runs, without ever holding the turn up. The adapter's `--launch-bridge`
+  answering someone runs, without ever holding the turn up. The adapter's `--launch-bridge`
   (new installs) restarts Messages with the helper when it is down and SIP is off, at most once per boot.
   Setup has an optional "Tapbacks and typing" guide, also for later.
 - The dashboard has one tab bar: the User/Developer switch is gone and Health is its last tab.
